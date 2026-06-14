@@ -9,6 +9,12 @@ spring:
     username: ${DB_USERNAME:inventario_user}
     password: ${DB_PASSWORD:inventario_pass}
 
+keycloak:
+  # Issuer publico esperado en el claim "iss" del JWT (ver KC_HOSTNAME en docker-compose.dev.yml)
+  issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8080/realms/inventario}
+  # JWKS URI usado por el backend para obtener las llaves de verificacion (red interna de Docker)
+  jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8080/realms/inventario/protocol/openid-connect/certs}
+
 management:
   endpoints:
     web:

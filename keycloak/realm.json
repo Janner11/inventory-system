@@ -1,0 +1,93 @@
+{
+  "realm": "inventario",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "clients": [
+    {
+      "clientId": "inventario-frontend",
+      "name": "Inventario Frontend",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "inventario-backend",
+      "name": "Inventario Backend",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "inventario-backend-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": true,
+      "redirectUris": []
+    }
+  ],
+  "roles": {
+    "client": {
+      "inventario-backend": [
+        {
+          "name": "product:view",
+          "description": "Ver lista y detalle de productos"
+        },
+        {
+          "name": "product:manage",
+          "description": "Crear, editar y eliminar productos"
+        }
+      ]
+    }
+  },
+  "users": [
+    {
+      "username": "admin@test.com",
+      "email": "admin@test.com",
+      "firstName": "Admin",
+      "lastName": "Test",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "inventario-backend": ["product:view", "product:manage"]
+      }
+    },
+    {
+      "username": "viewer@test.com",
+      "email": "viewer@test.com",
+      "firstName": "Viewer",
+      "lastName": "Test",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "viewer123",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "inventario-backend": ["product:view"]
+      }
+    }
+  ]
+}

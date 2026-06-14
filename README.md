@@ -61,9 +61,51 @@ sus datos en volúmenes de Docker (`postgres_data`, `keycloak_data`, `prometheus
    |----------|-----|---------------------------|
    | Backend (API) | http://localhost:8081/api/ping | — |
    | Backend (Actuator) | http://localhost:8081/actuator/health | — |
-   | Keycloak | http://localhost:8080 | `admin` / `admin` |
+   | Keycloak | http://localhost:8080 | `admin` / `admin` (consola admin) |
    | Prometheus | http://localhost:9090 | — |
    | Grafana | http://localhost:3000 | `admin` / `admin` |
+
+### Keycloak — realm `inventario` (SEC-001)
+
+El realm `inventario` se importa automáticamente al levantar Keycloak desde
+[`keycloak/realm.json`](keycloak/realm.json) (flag `--import-realm`). Incluye:
+
+- **Clients:** `inventario-frontend` (público, PKCE, redirect `http://localhost:5173/*`)
+  y `inventario-backend` (confidencial, secret de dev `inventario-backend-secret`,
+  `directAccessGrantsEnabled=true` para pruebas con `curl`).
+- **Permisos (client roles en `inventario-backend`):** `product:view`, `product:manage`.
+- **Usuarios de prueba:**
+
+  | Usuario | Password | Permisos |
+  |---------|----------|----------|
+  | `admin@test.com` | `admin123` | `product:view`, `product:manage` |
+  | `viewer@test.com` | `viewer123` | `product:view` |
+
+> Nota: la importación de realm con `IGNORE_EXISTING` solo aplica una vez por
+> volumen. Si se modifica `keycloak/realm.json` y se quiere reimportar, hay que
+> recrear el volumen `keycloak_data` (`docker compose -f docker-compose.dev.yml down -v`
+> y volver a levantar).
+
+#### Obtener un token JWT (dev, sin frontend)
+
+```bash
+curl -s -X POST "http://localhost:8080/realms/inventario/protocol/openid-connect/token" \
+  -d "grant_type=password" \
+  -d "client_id=inventario-backend" \
+  -d "client_secret=inventario-backend-secret" \
+  -d "username=viewer@test.com" \
+  -d "password=viewer123"
+```
+
+#### Endpoint protegido de prueba
+
+```bash
+# Sin token → 401
+curl -i http://localhost:8081/api/ping/secure
+
+# Con token (requiere scope product:view) → 200
+curl -i -H "Authorization: Bearer <ACCESS_TOKEN>" http://localhost:8081/api/ping/secure
+```
 
 5. Para detener y eliminar los contenedores (los datos persisten en los volúmenes):
 
@@ -81,9 +123,12 @@ sus datos en volúmenes de Docker (`postgres_data`, `keycloak_data`, `prometheus
 
 - El backend actual es un esqueleto mínimo de Spring Boot (endpoint `/api/ping` y
   Actuator) que expone métricas en `/actuator/prometheus` para que Prometheus pueda
-  scrapearlas. La lógica de negocio, seguridad OAuth2 y el resto de los endpoints se
-  incorporarán en tickets posteriores (BACK-001 en adelante).
+  scrapearlas. La lógica de negocio (Productos, Stock, etc.) se incorporará en
+  tickets posteriores (BACK-002 en adelante). La seguridad OAuth2 base (SEC-001)
+  ya está implementada — ver sección anterior.
 - Keycloak se inicia en modo `start-dev` con una base de datos propia (`keycloak`)
   creada automáticamente dentro de la misma instancia de PostgreSQL (ver
-  `scripts/init-postgres/01-create-keycloak-db.sh`). La importación del realm
-  `inventario` se realizará en el ticket SEC-001.
+  `scripts/init-postgres/01-create-keycloak-db.sh`), y con `KC_HOSTNAME=localhost`
+  fijo para que el claim `iss` de los tokens sea siempre
+  `http://localhost:8080/realms/inventario`, sin importar si la petición al
+  endpoint de token viene del host o de otro contenedor de la red Docker.
