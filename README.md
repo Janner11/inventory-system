@@ -97,14 +97,20 @@ curl -s -X POST "http://localhost:8080/realms/inventario/protocol/openid-connect
   -d "password=viewer123"
 ```
 
-#### Endpoint protegido de prueba
+#### Endpoints protegidos de prueba (SEC-002)
 
 ```bash
 # Sin token → 401
 curl -i http://localhost:8081/api/ping/secure
 
-# Con token (requiere scope product:view) → 200
+# Con token de admin@test.com o viewer@test.com (requiere scope product:view) → 200
 curl -i -H "Authorization: Bearer <ACCESS_TOKEN>" http://localhost:8081/api/ping/secure
+
+# Con token de admin@test.com (requiere scope product:manage) → 200
+curl -i -X POST -H "Authorization: Bearer <ACCESS_TOKEN_ADMIN>" http://localhost:8081/api/ping/manage
+
+# Con token de viewer@test.com (sin scope product:manage) → 403
+curl -i -X POST -H "Authorization: Bearer <ACCESS_TOKEN_VIEWER>" http://localhost:8081/api/ping/manage
 ```
 
 5. Para detener y eliminar los contenedores (los datos persisten en los volúmenes):
@@ -124,8 +130,10 @@ curl -i -H "Authorization: Bearer <ACCESS_TOKEN>" http://localhost:8081/api/ping
 - El backend actual es un esqueleto mínimo de Spring Boot (endpoint `/api/ping` y
   Actuator) que expone métricas en `/actuator/prometheus` para que Prometheus pueda
   scrapearlas. La lógica de negocio (Productos, Stock, etc.) se incorporará en
-  tickets posteriores (BACK-002 en adelante). La seguridad OAuth2 base (SEC-001)
-  ya está implementada — ver sección anterior.
+  tickets posteriores (BACK-002 en adelante). La seguridad OAuth2 Resource Server
+  (SEC-001/SEC-002) ya está implementada — ver sección anterior.
+- CORS está habilitado en `SecurityConfig` para los orígenes definidos en
+  `CORS_ALLOWED_ORIGINS` (por defecto `http://localhost:5173`, el frontend Vite).
 - Keycloak se inicia en modo `start-dev` con una base de datos propia (`keycloak`)
   creada automáticamente dentro de la misma instancia de PostgreSQL (ver
   `scripts/init-postgres/01-create-keycloak-db.sh`), y con `KC_HOSTNAME=localhost`
