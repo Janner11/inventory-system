@@ -113,6 +113,25 @@ curl -i -X POST -H "Authorization: Bearer <ACCESS_TOKEN_ADMIN>" http://localhost
 curl -i -X POST -H "Authorization: Bearer <ACCESS_TOKEN_VIEWER>" http://localhost:8081/api/ping/manage
 ```
 
+### Auditoría — Hibernate Envers (BACK-003)
+
+La entidad `Product` está anotada con `@Audited`. Cada `INSERT`/`UPDATE`/`DELETE`
+genera una fila en `products_aud` (snapshot del producto en esa revisión) y una
+fila en `revinfo` (timestamp de la revisión). La migración
+[`V3__create_audit_tables.sql`](backend/src/main/resources/db/migration/V3__create_audit_tables.sql)
+crea ambas tablas.
+
+Para ver el historial de revisiones de un producto desde `psql`:
+
+```sql
+SELECT p.rev, r.revtstmp, p.sku, p.name, p.quantity, p.status,
+       CASE p.revtype WHEN 0 THEN 'ADD' WHEN 1 THEN 'MOD' WHEN 2 THEN 'DEL' END AS revision_type
+FROM products_aud p
+JOIN revinfo r ON r.rev = p.rev
+WHERE p.id = '<PRODUCT_ID>'
+ORDER BY p.rev;
+```
+
 5. Para detener y eliminar los contenedores (los datos persisten en los volúmenes):
 
    ```bash

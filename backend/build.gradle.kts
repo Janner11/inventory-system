@@ -1,5 +1,6 @@
 plugins {
     java
+    jacoco
     id("org.springframework.boot") version "3.3.5"
     id("io.spring.dependency-management") version "1.1.6"
 }
@@ -31,6 +32,8 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
 
+    implementation("org.hibernate.orm:hibernate-envers")
+
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
 
     runtimeOnly("org.postgresql:postgresql")
@@ -58,4 +61,15 @@ tasks.withType<Test> {
     // usa esta system property (no DOCKER_API_VERSION) para fijar la version
     // de la API usada al hablar con el daemon.
     systemProperty("api.version", "1.41")
+
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
 }
