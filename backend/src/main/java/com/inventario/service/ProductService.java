@@ -8,8 +8,6 @@ import com.inventario.exception.DuplicateSkuException;
 import com.inventario.exception.ProductNotFoundException;
 import com.inventario.mapper.ProductMapper;
 import com.inventario.repository.ProductRepository;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,7 +15,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
-@Transactional
+@Transactional(readOnly = true)
 public class ProductService {
 
     private final ProductRepository productRepository;
@@ -28,56 +26,53 @@ public class ProductService {
         this.productMapper = productMapper;
     }
 
-    public ProductResponseDTO createProduct(ProductRequestDTO dto) {
-        String sku = dto.sku().toUpperCase();
+    public List<ProductResponseDTO> getAllProducts() {
+        return productRepository.findByStatus(ProductStatus.ACTIVE).stream()
+                .map(productMapper::toResponseDTO)
+                .toList();
+    }
 
-        if (productRepository.findBySkuIgnoreCase(sku).isPresent()) {
-            throw new DuplicateSkuException(sku);
-        }
+    public ProductResponseDTO getProductById(UUID id) {
+        return productMapper.toResponseDTO(findProductOrThrow(id));
+    }
 
-        Product product = productMapper.toEntity(dto);
+    @Transactional
+    public ProductResponseDTO createProduct(ProductRequestDTO request) {
+        String sku = request.sku().toUpperCase();
+        ensureSkuIsAvailable(sku, null);
+
+        Product product = productMapper.toEntity(request);
         product.setSku(sku);
         product.setStatus(ProductStatus.ACTIVE);
 
-        Product saved = productRepository.save(product);
-        return productMapper.toResponseDTO(saved);
+        return productMapper.toResponseDTO(productRepository.save(product));
     }
 
-    @Transactional(readOnly = true)
-    public ProductResponseDTO getProductById(UUID id) {
-        Product product = findProductOrThrow(id);
-        return productMapper.toResponseDTO(product);
-    }
-
-    @Transactional(readOnly = true)
-    public Page<ProductResponseDTO> getAllProducts(Pageable pageable) {
-        return productRepository.findAll(pageable).map(productMapper::toResponseDTO);
-    }
-
-    public ProductResponseDTO updateProduct(UUID id, ProductRequestDTO dto) {
+    @Transactional
+    public ProductResponseDTO updateProduct(UUID id, ProductRequestDTO request) {
         Product product = findProductOrThrow(id);
 
-        String sku = dto.sku().toUpperCase();
-        productRepository.findBySkuIgnoreCase(sku)
-                .filter(existing -> !existing.getId().equals(id))
-                .ifPresent(existing -> {
-                    throw new DuplicateSkuException(sku);
-                });
+        String sku = request.sku().toUpperCase();
+        ensureSkuIsAvailable(sku, id);
 
-        productMapper.updateEntityFromDto(dto, product);
+        product.setName(request.name());
         product.setSku(sku);
+        product.setDescription(request.description());
+        product.setCategory(request.category());
+        product.setPrice(request.price());
+        product.setQuantity(request.quantity());
+        product.setMinStock(request.minStock());
 
-        Product saved = productRepository.save(product);
-        return productMapper.toResponseDTO(saved);
+        return productMapper.toResponseDTO(productRepository.save(product));
     }
 
+    @Transactional
     public void deleteProduct(UUID id) {
         Product product = findProductOrThrow(id);
         product.setStatus(ProductStatus.INACTIVE);
         productRepository.save(product);
     }
 
-    @Transactional(readOnly = true)
     public List<ProductResponseDTO> getProductsBelowMinStock() {
         return productRepository.findByQuantityLessThanMinStockAndStatus(ProductStatus.ACTIVE).stream()
                 .map(productMapper::toResponseDTO)
@@ -87,5 +82,13 @@ public class ProductService {
     private Product findProductOrThrow(UUID id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new ProductNotFoundException(id));
+    }
+
+    private void ensureSkuIsAvailable(String sku, UUID excludingProductId) {
+        productRepository.findBySkuIgnoreCase(sku)
+                .filter(existing -> !existing.getId().equals(excludingProductId))
+                .ifPresent(existing -> {
+                    throw new DuplicateSkuException(sku);
+                });
     }
 }
