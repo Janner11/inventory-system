@@ -32,6 +32,10 @@ keycloak:
   # JWKS URI usado por el backend para obtener las llaves de verificacion (red interna de Docker)
   jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8080/realms/inventario/protocol/openid-connect/certs}
 
+cors:
+  # Origenes permitidos para llamadas desde el navegador (frontend React/Vite). Lista separada por comas.
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
 management:
   endpoints:
     web:
