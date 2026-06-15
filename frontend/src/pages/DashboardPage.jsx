@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useAuth } from '../hooks/useAuth';
 import api from '../services/axiosConfig';
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
   const [products, setProducts] = useState(null);
   const [error, setError] = useState(null);
 
@@ -17,8 +15,6 @@ export default function DashboardPage() {
   return (
     <div>
       <h1>Dashboard</h1>
-      <p>Sesión iniciada como: {user?.preferred_username}</p>
-      <button onClick={logout}>Cerrar sesión</button>
 
       <h2>Productos (endpoint protegido)</h2>
       {error && <p>Error al consultar /api/products: {error}</p>}
