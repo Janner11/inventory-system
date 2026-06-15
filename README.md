@@ -212,6 +212,30 @@ La SPA queda disponible en `http://localhost:5173/`. Desde ahí:
     FRONT-003/FRONT-004.
 - Cualquier otra ruta muestra `NotFoundPage` (404).
 
+### Observabilidad (OBS-004)
+
+Con el stack levantado (`docker compose -f docker-compose.dev.yml up -d`), el
+backend expone métricas en `/actuator/prometheus` (Micrometer), Prometheus
+(`http://localhost:9090`) las scrapea cada 15s (job `inventario-backend`), y
+Grafana (`http://localhost:3000`, `admin`/`admin`) trae **provisionados
+automáticamente** el datasource de Prometheus y el dashboard **"Inventario
+Backend"** (`observability/grafana/provisioning/dashboards/inventario-backend.json`),
+con los siguientes paneles:
+
+- **Backend Up**: estado del target Prometheus (`up{job="inventario-backend"}`).
+- **HTTP Request Rate (req/s)**: tasa de requests por endpoint/método.
+- **HTTP Error Rate (%)**: porcentaje de respuestas `4xx`/`5xx`.
+- **HTTP Latency p95**: percentil 95 de latencia por endpoint (requiere
+  `management.metrics.distribution.percentiles-histogram.http.server.requests=true`,
+  ya configurado en `application.yml`).
+- **JVM Heap Used**: uso de heap vs. máximo configurado.
+- **JVM Live Threads**: hilos vivos de la JVM.
+- **HikariCP Connections**: conexiones activas/pendientes/idle del pool de BD.
+
+El dashboard se actualiza solo (`refresh: 10s`) y no requiere configuración
+manual: al iniciar Grafana, el provider `inventario` (`provisioning/dashboards/dashboards.yml`)
+carga el JSON automáticamente.
+
 ### Notas
 
 - El backend actual es un esqueleto mínimo de Spring Boot (endpoint `/api/ping` y
