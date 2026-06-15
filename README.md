@@ -144,6 +144,34 @@ ORDER BY p.rev;
    docker compose -f docker-compose.dev.yml down -v
    ```
 
+### Control de Stock (BACK-005)
+
+Cada entrada, salida o ajuste de stock de un producto genera un registro en
+`stock_movements` (migración
+[`V4__create_stock_movements_table.sql`](backend/src/main/resources/db/migration/V4__create_stock_movements_table.sql)),
+con FK a `products`. `StockService` expone tres operaciones:
+
+- **Entrada** (`type=ENTRY`): incrementa `quantity` del producto.
+- **Salida** (`type=EXIT`): decrementa `quantity`; si la cantidad solicitada
+  supera el stock disponible, lanza `InsufficientStockException` (422).
+- **Ajuste** (`type=ADJUSTMENT`): fija `quantity` a un valor absoluto (p. ej.
+  tras un conteo físico).
+
+En los tres casos se valida que el producto exista (404 si no) y esté
+`ACTIVE` (409 `ProductInactiveException` si está `INACTIVE`). Cada
+`StockMovement` guarda `previousQuantity`, `newQuantity` y `quantity` (delta)
+para mantener trazabilidad completa.
+
+**Alerta de stock bajo**: después de cada movimiento, si
+`product.quantity < product.minStock`, se emite un `log.warn(...)` con el SKU,
+nombre y cantidades del producto. Esta alerta queda disponible para que
+herramientas de observabilidad (p. ej. Loki/Grafana, BACK-008) la consuman más
+adelante.
+
+> Los endpoints REST `/api/stock/*` (controller) y los scopes `stock:view`/
+> `stock:manage` quedan fuera de este alcance — se implementarán en BACK-006 y
+> en la ampliación de seguridad correspondiente.
+
 ### Notas
 
 - El backend actual es un esqueleto mínimo de Spring Boot (endpoint `/api/ping` y
