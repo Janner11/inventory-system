@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -11,6 +12,10 @@ import StockPage from '../../src/pages/StockPage';
 
 vi.mock('../../src/hooks/useAuth');
 
+vi.mock('../../src/services/productService', () => ({
+  getProducts: vi.fn().mockResolvedValue([]),
+}));
+
 const authenticatedUser = {
   preferred_username: 'admin@test.com',
   resource_access: {
@@ -21,19 +26,22 @@ const authenticatedUser = {
 };
 
 function renderDashboard() {
+  const queryClient = new QueryClient();
   return render(
-    <MemoryRouter initialEntries={['/dashboard']}>
-      <Routes>
-        <Route path="/" element={<p>Página de inicio</p>} />
-        <Route element={<ProtectedRoute />}>
-          <Route element={<AppShell />}>
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/products" element={<ProductsPage />} />
-            <Route path="/stock" element={<StockPage />} />
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route path="/" element={<p>Página de inicio</p>} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppShell />}>
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/products" element={<ProductsPage />} />
+              <Route path="/stock" element={<StockPage />} />
+            </Route>
           </Route>
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

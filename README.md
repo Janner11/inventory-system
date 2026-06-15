@@ -208,9 +208,31 @@ La SPA queda disponible en `http://localhost:5173/`. Desde ahí:
   - **Sidebar** (izquierda): enlaces a "Dashboard" y "Productos", con el
     enlace activo resaltado (`NavLink`/`aria-current="page"`).
   - `DashboardPage`: smoke-test de `GET /api/products` (SEC-003).
-  - `ProductsPage`: placeholder — el CRUD de productos se implementa en
-    FRONT-003/FRONT-004.
+  - `ProductsPage` (FRONT-003): lista de productos (`GET /api/products`)
+    con búsqueda por nombre/SKU, filtro por categoría, filtro "Solo stock
+    bajo" (`quantity < minStock`) y paginación — todo del lado del cliente
+    (ver nota más abajo). El formulario de creación/edición se implementa en
+    FRONT-004.
 - Cualquier otra ruta muestra `NotFoundPage` (404).
+
+### Módulo de Productos (FRONT-003 — Lista, Búsqueda, Filtros y Paginación)
+
+`ProductsPage` consume `GET /api/products` (vía `useProducts`, React Query)
+y aplica búsqueda, filtros y paginación **del lado del cliente**:
+
+- **Búsqueda**: por nombre o SKU (case-insensitive, coincidencia parcial).
+- **Filtros**: por categoría (`<select>` con las categorías presentes en los
+  productos) y "Solo stock bajo" (`quantity < minStock`, mismo criterio de
+  alerta de BACK-005).
+- **Paginación**: 5 productos por página, con controles "Anterior"/"Siguiente".
+
+> `GET /api/products` (BACK-003, avance — scope reducido) devuelve la lista
+> completa de productos `ACTIVE` sin paginación, orden ni filtros en el
+> servidor. Dado que el dataset de este avance es pequeño, búsqueda, filtros
+> y paginación se implementaron en el frontend sobre esa lista completa, sin
+> requerir cambios en el backend. Si el dataset creciera, estos mismos
+> controles deberían migrar a parámetros de query (`?q=&category=&page=&size=`)
+> resueltos por el backend — ver "Próximos pasos sugeridos".
 
 ### Observabilidad (OBS-004 — dashboard de Aplicación)
 
