@@ -132,6 +132,18 @@ WHERE p.id = '<PRODUCT_ID>'
 ORDER BY p.rev;
 ```
 
+**Endpoint de auditoría (BACK-007)**: `GET /api/audit/products/{id}/revisions`
+(scope `product:view`) expone el mismo historial vía API/Swagger, sin
+necesidad de `psql`. Devuelve un array con un snapshot del producto por cada
+revisión (`revisionNumber`, `revisionTimestamp`, `revisionType` ADD/MOD/DEL y
+los campos del producto en esa revisión). Responde 404 si el producto no
+tiene historial de auditoría.
+
+```bash
+curl -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  http://localhost:8081/api/audit/products/<PRODUCT_ID>/revisions
+```
+
 5. Para detener y eliminar los contenedores (los datos persisten en los volúmenes):
 
    ```bash
