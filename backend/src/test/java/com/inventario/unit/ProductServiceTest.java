@@ -15,10 +15,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -107,25 +103,24 @@ class ProductServiceTest {
     }
 
     @Test
-    void getAllProducts_withPagination_returnsPagedResult() {
-        Pageable pageable = PageRequest.of(0, 10);
+    void getAllProducts_returnsActiveProducts() {
         Product entity = buildEntity(UUID.randomUUID(), "KEY-003", ProductStatus.ACTIVE);
         ProductResponseDTO responseDTO = buildResponseDTO(entity);
 
-        when(productRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(entity), pageable, 1));
+        when(productRepository.findByStatus(ProductStatus.ACTIVE)).thenReturn(List.of(entity));
         when(productMapper.toResponseDTO(entity)).thenReturn(responseDTO);
 
-        Page<ProductResponseDTO> result = productService.getAllProducts(pageable);
+        List<ProductResponseDTO> result = productService.getAllProducts();
 
-        assertThat(result.getTotalElements()).isEqualTo(1);
-        assertThat(result.getContent()).containsExactly(responseDTO);
+        assertThat(result).containsExactly(responseDTO);
     }
 
     @Test
     void updateProduct_withValidData_returnsUpdatedProduct() {
         UUID id = UUID.randomUUID();
         Product existing = buildEntity(id, "MON-004", ProductStatus.ACTIVE);
-        ProductRequestDTO request = buildRequestDTO("mon-004");
+        ProductRequestDTO request = new ProductRequestDTO("Monitor 27\"", "mon-004", "Nueva descripcion",
+                "Perifericos", new BigDecimal("250.00"), 15, 3);
         ProductResponseDTO expected = buildResponseDTO(existing);
 
         when(productRepository.findById(id)).thenReturn(Optional.of(existing));
@@ -136,7 +131,13 @@ class ProductServiceTest {
         ProductResponseDTO result = productService.updateProduct(id, request);
 
         assertThat(result).isEqualTo(expected);
-        verify(productMapper).updateEntityFromDto(request, existing);
+        assertThat(existing.getName()).isEqualTo("Monitor 27\"");
+        assertThat(existing.getSku()).isEqualTo("MON-004");
+        assertThat(existing.getDescription()).isEqualTo("Nueva descripcion");
+        assertThat(existing.getCategory()).isEqualTo("Perifericos");
+        assertThat(existing.getPrice()).isEqualTo(new BigDecimal("250.00"));
+        assertThat(existing.getQuantity()).isEqualTo(15);
+        assertThat(existing.getMinStock()).isEqualTo(3);
     }
 
     @Test

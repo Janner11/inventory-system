@@ -1,5 +1,6 @@
 package com.inventario.integration;
 
+import com.inventario.config.JpaAuditingConfig;
 import com.inventario.entity.Product;
 import com.inventario.entity.ProductStatus;
 import com.inventario.repository.ProductRepository;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.transaction.TestTransaction;
@@ -27,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(JpaAuditingConfig.class)
 @Testcontainers
 class ProductAuditIntegrationTest {
 
