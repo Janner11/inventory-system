@@ -4,6 +4,7 @@ import styles from '../../styles/layout.module.css';
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/products', label: 'Productos' },
+  { to: '/stock', label: 'Stock' },
 ];
 
 export default function Sidebar() {
