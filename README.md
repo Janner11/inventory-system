@@ -184,6 +184,34 @@ adelante.
 > `stock:manage` quedan fuera de este alcance — se implementarán en BACK-006 y
 > en la ampliación de seguridad correspondiente.
 
+### Frontend (React + Vite)
+
+Con el backend, Postgres y Keycloak corriendo vía
+`docker compose -f docker-compose.dev.yml up -d`, el frontend se ejecuta por
+fuera de Docker en modo desarrollo:
+
+```bash
+cd frontend
+cp .env.example .env   # ajustar solo si las URLs por defecto no aplican
+npm install
+npm run dev
+```
+
+La SPA queda disponible en `http://localhost:5173/`. Desde ahí:
+
+- `/` (`HomePage`): página pública con botón "Iniciar sesión" (redirige a
+  Keycloak vía PKCE — SEC-003). Si ya hay sesión, redirige a `/dashboard`.
+- `/dashboard` y `/products`: rutas protegidas (`ProtectedRoute`), envueltas
+  en el layout principal (`AppShell`, FRONT-001):
+  - **Navbar** (arriba): nombre de la app, usuario autenticado
+    (`preferred_username`) y botón "Cerrar sesión".
+  - **Sidebar** (izquierda): enlaces a "Dashboard" y "Productos", con el
+    enlace activo resaltado (`NavLink`/`aria-current="page"`).
+  - `DashboardPage`: smoke-test de `GET /api/products` (SEC-003).
+  - `ProductsPage`: placeholder — el CRUD de productos se implementa en
+    FRONT-003/FRONT-004.
+- Cualquier otra ruta muestra `NotFoundPage` (404).
+
 ### Notas
 
 - El backend actual es un esqueleto mínimo de Spring Boot (endpoint `/api/ping` y
