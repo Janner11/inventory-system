@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import styles from '../../styles/products.module.css';
 
 export default function ProductsTable({ products }) {
@@ -16,6 +17,7 @@ export default function ProductsTable({ products }) {
           <th>Cantidad</th>
           <th>Stock mínimo</th>
           <th>Estado</th>
+          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -35,6 +37,11 @@ export default function ProductsTable({ products }) {
                 ) : (
                   <span className={styles.badgeSuccess}>{product.status}</span>
                 )}
+              </td>
+              <td>
+                <Link to={`/products/${product.id}/edit`} className={styles.actionLink}>
+                  Editar
+                </Link>
               </td>
             </tr>
           );

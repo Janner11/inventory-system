@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Pagination from '../components/common/Pagination';
 import ProductFilters from '../components/products/ProductFilters';
 import ProductsTable from '../components/products/ProductsTable';
@@ -48,7 +49,12 @@ export default function ProductsPage() {
 
   return (
     <div className={styles.productsPage}>
-      <h1>Productos</h1>
+      <div className={styles.pageHeader}>
+        <h1>Productos</h1>
+        <Link to="/products/new" className={styles.newProductButton}>
+          Nuevo producto
+        </Link>
+      </div>
 
       {isLoading && <p>Cargando productos...</p>}
       {isError && <p role="alert">No se pudieron cargar los productos: {error.message}</p>}
