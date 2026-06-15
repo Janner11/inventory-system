@@ -1,0 +1,62 @@
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.welcome {
+  font-size: 1rem;
+}
+
+.roles {
+  font-size: 0.875rem;
+  color: var(--color-text);
+}
+
+.sectionTitle {
+  margin-top: var(--spacing-md);
+  font-size: 1.125rem;
+}
+
+.quickAccessGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.card {
+  display: block;
+  padding: var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  background-color: #fff;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.card:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.card:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.cardTitle {
+  margin: 0 0 var(--spacing-sm) 0;
+  color: var(--color-primary);
+}
+
+.cardDescription {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+/* Mobile */
+@media (max-width: 767px) {
+  .quickAccessGrid {
+    grid-template-columns: 1fr;
+  }
+}

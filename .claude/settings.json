@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(./gradlew test *)",
-      "Bash(./gradlew bootJar)"
+      "Bash(./gradlew bootJar)",
+      "Bash(npm run *)",
+      "Bash(docker compose *)"
     ]
   }
 }
