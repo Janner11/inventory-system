@@ -176,6 +176,34 @@ reemplaza con un mock que emite tokens controlados de admin
 cd backend && ./gradlew test --tests "com.inventario.api.ProductApiTest"
 ```
 
+### E2E Testing — Playwright (TEST-004)
+
+`frontend/tests/e2e/` contiene **7 escenarios E2E** con Playwright (Chromium) que verifican el flujo completo del usuario contra el stack real (frontend Vite + backend Spring Boot + Keycloak + PostgreSQL vía Docker).
+
+| Archivo | Escenarios |
+|---|---|
+| `auth.spec.js` | Login via Keycloak redirige a `/dashboard`; navbar/sidebar visibles post-login; logout regresa a `/` |
+| `products.spec.js` | Crear producto → aparece en lista; Editar producto → datos actualizados; Eliminar producto → desaparece de lista; Flujo CRUD completo (crear → leer → editar → eliminar) |
+
+**Requisitos previos para ejecutar:**
+
+```bash
+# 1. Levantar el stack completo
+docker compose -f docker-compose.dev.yml up -d
+
+# 2. Iniciar el frontend (en otra terminal)
+cd frontend && npm run dev
+
+# 3. (Primera vez) Instalar browsers de Playwright
+cd frontend && npx playwright install chromium
+```
+
+**Ejecutar los tests:**
+
+```bash
+cd frontend && npm run test:e2e
+```
+
 ### Control de Stock (BACK-005)
 
 Cada entrada, salida o ajuste de stock de un producto genera un registro en

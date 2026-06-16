@@ -1,7 +1,16 @@
 import { Link } from 'react-router-dom';
+import { useDeleteProduct } from '../../hooks/useProducts';
 import styles from '../../styles/products.module.css';
 
 export default function ProductsTable({ products }) {
+  const deleteMutation = useDeleteProduct();
+
+  function handleDelete(id, name) {
+    if (window.confirm(`¿Eliminar el producto "${name}"?`)) {
+      deleteMutation.mutate(id);
+    }
+  }
+
   if (products.length === 0) {
     return <p>No se encontraron productos.</p>;
   }
@@ -42,6 +51,14 @@ export default function ProductsTable({ products }) {
                 <Link to={`/products/${product.id}/edit`} className={styles.actionLink}>
                   Editar
                 </Link>
+                <button
+                  type="button"
+                  className={styles.deleteButton}
+                  onClick={() => handleDelete(product.id, product.name)}
+                  disabled={deleteMutation.isPending}
+                >
+                  Eliminar
+                </button>
               </td>
             </tr>
           );
