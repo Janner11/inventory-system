@@ -1,7 +1,6 @@
 # === Contexto local de Claude (no se publica) ===
 CLAUDE.md
 .claude/
-.github/
 # === Variables de entorno ===
 .env
 .env.local
