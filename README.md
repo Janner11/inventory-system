@@ -312,6 +312,42 @@ carga el JSON automáticamente.
 > avance. Los otros 3 quedan pendientes (requieren Node Exporter, métricas de
 > negocio y métricas de seguridad que el backend aún no expone).
 
+### CI/CD
+
+#### GitHub Actions (`.github/workflows/ci.yml`)
+
+Se ejecuta automáticamente en cada push a `develop` y en cada PR contra `develop`/`main`:
+
+| Job | Comando | Artefacto |
+|---|---|---|
+| Build | `./gradlew build -x test` | — |
+| Unit Tests | `./gradlew test --tests "com.inventario.unit.*" jacocoTestReport` | Resultados XML + reporte JaCoCo |
+| Integration & API Tests | `./gradlew test --tests "com.inventario.integration.*" --tests "com.inventario.api.*"` | Resultados XML |
+
+#### Jenkins (`Jenkinsfile`)
+
+Pipeline declarativo en la raíz del repositorio. Para usarlo en Jenkins:
+
+1. Crear un nuevo job de tipo **Pipeline** (o Multibranch Pipeline).
+2. En **Pipeline → Definition**: seleccionar *Pipeline script from SCM*.
+3. SCM: Git → URL del repositorio → Branch: `*/develop`.
+4. Script Path: `Jenkinsfile`.
+5. **Prerrequisitos del agente Jenkins:**
+   - JDK 21 configurado en *Manage Jenkins → Tools → JDK installations* con el nombre `JDK-21`.
+   - Docker daemon accesible desde el agente (necesario para Testcontainers y para el stage de Build Docker Image).
+
+Stages del pipeline:
+
+| Stage | Descripción |
+|---|---|
+| Checkout | `checkout scm` + `chmod +x gradlew` |
+| Build | `./gradlew build -x test` |
+| Unit Tests | `./gradlew test --tests "com.inventario.unit.*" jacocoTestReport` |
+| Integration & API Tests | `./gradlew test --tests "com.inventario.integration.*" --tests "com.inventario.api.*"` |
+| Build Docker Image | `docker build -t inventario-backend:${BUILD_NUMBER}` |
+
+Post (siempre): publica resultados JUnit (`backend/build/test-results/test/*.xml`), reporte de cobertura JaCoCo (HTML Publisher) y archiva el JAR (`backend/build/libs/*.jar`).
+
 ### Notas
 
 - El backend actual es un esqueleto mínimo de Spring Boot (endpoint `/api/ping` y
