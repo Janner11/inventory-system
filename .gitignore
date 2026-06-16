@@ -1,0 +1,53 @@
+# === Contexto local de Claude (no se publica) ===
+CLAUDE.md
+.claude/
+.github/
+# === Variables de entorno ===
+.env
+.env.local
+.env.staging
+*.env
+!.env.example
+!.env.staging.example
+
+# === Frontend (Node / Vite) ===
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/coverage/
+frontend/.vite/
+frontend/playwright-report/
+frontend/test-results/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# === Backend (Java / Gradle) ===
+backend/build/
+backend/target/
+backend/.gradle/
+*.class
+*.jar
+!backend/gradle/wrapper/gradle-wrapper.jar
+
+# === Testing / Reportes ===
+tests/performance/results/
+**/jacoco/
+**/site/
+
+# === Docker ===
+*.pid
+
+# === IDEs y editores ===
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# === Sistema operativo ===
+.DS_Store
+Thumbs.db
+
+# === Logs ===
+*.log
+logs/
