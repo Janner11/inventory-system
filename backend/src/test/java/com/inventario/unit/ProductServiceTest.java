@@ -9,6 +9,10 @@ import com.inventario.exception.ProductNotFoundException;
 import com.inventario.mapper.ProductMapper;
 import com.inventario.repository.ProductRepository;
 import com.inventario.service.ProductService;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,10 +44,14 @@ class ProductServiceTest {
     private ProductMapper productMapper;
 
     private ProductService productService;
+    private Validator validator;
 
     @BeforeEach
     void setUp() {
         productService = new ProductService(productRepository, productMapper);
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            validator = factory.getValidator();
+        }
     }
 
     @Test
@@ -204,6 +213,38 @@ class ProductServiceTest {
         List<ProductResponseDTO> result = productService.getProductsBelowMinStock();
 
         assertThat(result).containsExactly(responseDTO);
+    }
+
+    @Test
+    void createProduct_invalidName_throws() {
+        ProductRequestDTO request = new ProductRequestDTO(
+                "", "SKU-001", "Descripcion", "General", new BigDecimal("10.00"), 5, 1);
+        Set<ConstraintViolation<ProductRequestDTO>> violations = validator.validate(request);
+        assertThat(violations).anyMatch(v -> v.getPropertyPath().toString().equals("name"));
+    }
+
+    @Test
+    void createProduct_invalidPrice_throws() {
+        ProductRequestDTO request = new ProductRequestDTO(
+                "Producto Test", "SKU-001", "Descripcion", "General", BigDecimal.ZERO, 5, 1);
+        Set<ConstraintViolation<ProductRequestDTO>> violations = validator.validate(request);
+        assertThat(violations).anyMatch(v -> v.getPropertyPath().toString().equals("price"));
+    }
+
+    @Test
+    void createProduct_invalidCategory_throws() {
+        ProductRequestDTO request = new ProductRequestDTO(
+                "Producto Test", "SKU-001", "Descripcion", "", new BigDecimal("10.00"), 5, 1);
+        Set<ConstraintViolation<ProductRequestDTO>> violations = validator.validate(request);
+        assertThat(violations).anyMatch(v -> v.getPropertyPath().toString().equals("category"));
+    }
+
+    @Test
+    void updateProduct_invalidPrice_throws() {
+        ProductRequestDTO request = new ProductRequestDTO(
+                "Producto Test", "SKU-001", "Descripcion", "General", new BigDecimal("-1.00"), 5, 1);
+        Set<ConstraintViolation<ProductRequestDTO>> violations = validator.validate(request);
+        assertThat(violations).anyMatch(v -> v.getPropertyPath().toString().equals("price"));
     }
 
     private ProductRequestDTO buildRequestDTO(String sku) {

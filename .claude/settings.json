@@ -4,7 +4,8 @@
       "Bash(./gradlew test *)",
       "Bash(./gradlew bootJar)",
       "Bash(npm run *)",
-      "Bash(docker compose *)"
+      "Bash(docker compose *)",
+      "Bash(./gradlew compileTestJava)"
     ]
   }
 }
