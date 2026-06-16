@@ -5,7 +5,9 @@
       "Bash(./gradlew bootJar)",
       "Bash(npm run *)",
       "Bash(docker compose *)",
-      "Bash(./gradlew compileTestJava)"
+      "Bash(./gradlew compileTestJava)",
+      "Bash(git -C /Users/janner/Desktop/inventory-system remote -v)",
+      "Bash(git -C /Users/janner/Desktop/inventory-system log --oneline --grep=\"Merge pull request\")"
     ]
   }
 }
