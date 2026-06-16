@@ -48,6 +48,9 @@ export default function ProductsTable({ products }) {
                 )}
               </td>
               <td>
+                <Link to={`/products/${product.id}`} className={styles.actionLink}>
+                  Ver
+                </Link>
                 <Link to={`/products/${product.id}/edit`} className={styles.actionLink}>
                   Editar
                 </Link>
