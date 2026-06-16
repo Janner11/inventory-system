@@ -156,6 +156,26 @@ curl -H "Authorization: Bearer <ACCESS_TOKEN>" \
    docker compose -f docker-compose.dev.yml down -v
    ```
 
+### API Testing — RestAssured (TEST-003)
+
+`backend/src/test/java/com/inventario/api/ProductApiTest.java` contiene
+**13 escenarios de API testing** con RestAssured contra un servidor HTTP real
+(`@SpringBootTest(webEnvironment = RANDOM_PORT)`) y una base de datos PostgreSQL
+levantada vía Testcontainers. No requiere Keycloak — el `JwtDecoder` se
+reemplaza con un mock que emite tokens controlados de admin
+(`product:view + product:manage`) y viewer (`product:view`).
+
+| Tipo | Escenarios |
+|---|---|
+| Validación de permisos 401 | Sin token: `GET /products`, `POST /products`, `POST /stock/entry` |
+| Validación de permisos 403 | Scope insuficiente: `POST /products` (viewer), `PUT /products/{id}` (viewer), `POST /stock/entry` (viewer) |
+| Validación de errores | `POST /products` con body inválido → 400; `GET /products/{id}` inexistente → 404 |
+| Rutas exitosas | `GET /products` → 200; `POST /products` → 201; `GET /products/{id}` → 200; `PUT /products/{id}` → 200; `DELETE /products/{id}` → 204 |
+
+```bash
+cd backend && ./gradlew test --tests "com.inventario.api.ProductApiTest"
+```
+
 ### Control de Stock (BACK-005)
 
 Cada entrada, salida o ajuste de stock de un producto genera un registro en
