@@ -350,11 +350,10 @@ Post (siempre): publica resultados JUnit (`backend/build/test-results/test/*.xml
 
 ### Notas
 
-- El backend actual es un esqueleto mínimo de Spring Boot (endpoint `/api/ping` y
-  Actuator) que expone métricas en `/actuator/prometheus` para que Prometheus pueda
-  scrapearlas. La lógica de negocio (Productos, Stock, etc.) se incorporará en
-  tickets posteriores (BACK-002 en adelante). La seguridad OAuth2 Resource Server
-  (SEC-001/SEC-002) ya está implementada — ver sección anterior.
+- El backend expone métricas en `/actuator/prometheus` (Micrometer) para que
+  Prometheus pueda scrapearlas. La lógica de negocio (Productos, Stock, Auditoría)
+  y la seguridad OAuth2 Resource Server (SEC-001/SEC-002) están completamente
+  implementadas — ver secciones anteriores para el detalle de cada módulo.
 - CORS está habilitado en `SecurityConfig` para los orígenes definidos en
   `CORS_ALLOWED_ORIGINS` (por defecto `http://localhost:5173`, el frontend Vite).
 - Keycloak se inicia en modo `start-dev` con una base de datos propia (`keycloak`)
