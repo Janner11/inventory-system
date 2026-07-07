@@ -55,6 +55,9 @@ class ProductApiTest {
 
     private static final String ADMIN_TOKEN = "admin-token";
     private static final String VIEWER_TOKEN = "viewer-token";
+    private static final String WAREHOUSE_TOKEN = "warehouse-token";
+    private static final String AUDITOR_TOKEN = "auditor-token";
+    private static final String PRODUCT_MANAGER_ONLY_TOKEN = "product-manager-only-token";
 
     @BeforeEach
     void setUp() {
@@ -63,9 +66,17 @@ class ProductApiTest {
         RestAssured.basePath = "/api";
 
         when(jwtDecoder.decode(ADMIN_TOKEN))
-                .thenReturn(buildJwt(ADMIN_TOKEN, List.of("product:view", "product:manage")));
+                .thenReturn(buildJwt(ADMIN_TOKEN, List.of(
+                        "product:view", "product:manage", "stock:view", "stock:manage",
+                        "report:view", "user:manage", "audit:view")));
         when(jwtDecoder.decode(VIEWER_TOKEN))
-                .thenReturn(buildJwt(VIEWER_TOKEN, List.of("product:view")));
+                .thenReturn(buildJwt(VIEWER_TOKEN, List.of("product:view", "stock:view")));
+        when(jwtDecoder.decode(WAREHOUSE_TOKEN))
+                .thenReturn(buildJwt(WAREHOUSE_TOKEN, List.of("product:view", "stock:view", "stock:manage")));
+        when(jwtDecoder.decode(AUDITOR_TOKEN))
+                .thenReturn(buildJwt(AUDITOR_TOKEN, List.of("audit:view", "report:view")));
+        when(jwtDecoder.decode(PRODUCT_MANAGER_ONLY_TOKEN))
+                .thenReturn(buildJwt(PRODUCT_MANAGER_ONLY_TOKEN, List.of("product:view", "product:manage")));
     }
 
     // ── Validación de permisos — 401 (sin token) ─────────────────────────────
@@ -205,6 +216,75 @@ class ProductApiTest {
                 .header("Authorization", "Bearer " + ADMIN_TOKEN)
                 .when().delete("/products/{id}", id)
                 .then().statusCode(204);
+    }
+
+    // ── Stock — scope dedicado stock:manage (SEC-002) ────────────────────────
+
+    @Test
+    void registerStockEntry_conSoloProductManageScope_devuelve403() {
+        // product:manage ya no basta para /stock/entry: el scope dedicado es stock:manage.
+        String productId = createProduct("SKU-STOCK-PROD-" + shortId());
+        given()
+                .header("Authorization", "Bearer " + PRODUCT_MANAGER_ONLY_TOKEN)
+                .contentType(ContentType.JSON)
+                .body(Map.of("productId", productId, "quantity", 5, "performedBy", "tester"))
+                .when().post("/stock/entry")
+                .then().statusCode(403);
+    }
+
+    @Test
+    void registerStockEntry_conStockManageScope_devuelve201() {
+        String productId = createProduct("SKU-STOCK-ENTRY-" + shortId());
+        given()
+                .header("Authorization", "Bearer " + WAREHOUSE_TOKEN)
+                .contentType(ContentType.JSON)
+                .body(Map.of("productId", productId, "quantity", 5, "performedBy", "tester"))
+                .when().post("/stock/entry")
+                .then()
+                .statusCode(201)
+                .body("newQuantity", equalTo(15));
+    }
+
+    @Test
+    void registerStockExit_conStockManageScope_devuelve201() {
+        String productId = createProduct("SKU-STOCK-EXIT-" + shortId());
+        given()
+                .header("Authorization", "Bearer " + WAREHOUSE_TOKEN)
+                .contentType(ContentType.JSON)
+                .body(Map.of("productId", productId, "quantity", 4, "performedBy", "tester"))
+                .when().post("/stock/exit")
+                .then()
+                .statusCode(201)
+                .body("newQuantity", equalTo(6));
+    }
+
+    // ── Auditoria — scope dedicado audit:view (SEC-002) ──────────────────────
+
+    @Test
+    void auditRevisions_sinToken_devuelve401() {
+        given()
+                .when().get("/audit/products/{id}/revisions", UUID.randomUUID())
+                .then().statusCode(401);
+    }
+
+    @Test
+    void auditRevisions_conProductViewScope_devuelve403() {
+        // product:view ya no basta para /audit/**: el scope dedicado es audit:view.
+        given()
+                .header("Authorization", "Bearer " + VIEWER_TOKEN)
+                .when().get("/audit/products/{id}/revisions", UUID.randomUUID())
+                .then().statusCode(403);
+    }
+
+    @Test
+    void auditRevisions_conAuditViewScope_devuelve200ConHistorial() {
+        String id = createProduct("SKU-AUDIT-" + shortId());
+        given()
+                .header("Authorization", "Bearer " + AUDITOR_TOKEN)
+                .when().get("/audit/products/{id}/revisions", id)
+                .then()
+                .statusCode(200)
+                .body("[0].revisionType", equalTo("ADD"));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

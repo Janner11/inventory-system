@@ -31,8 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({SecurityConfig.class, JwtAuthConverter.class})
 class AuditControllerTest {
 
-    private static final String VIEW_SCOPE = "SCOPE_product:view";
-    private static final String MANAGE_SCOPE = "SCOPE_product:manage";
+    private static final String VIEW_SCOPE = "SCOPE_audit:view";
+    private static final String INSUFFICIENT_SCOPE = "SCOPE_product:view";
 
     @Autowired
     private MockMvc mockMvc;
@@ -70,7 +70,7 @@ class AuditControllerTest {
         UUID id = UUID.randomUUID();
 
         mockMvc.perform(get("/api/audit/products/{id}/revisions", id)
-                        .with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
+                        .with(jwt().authorities(new SimpleGrantedAuthority(INSUFFICIENT_SCOPE))))
                 .andExpect(status().isForbidden());
     }
 
