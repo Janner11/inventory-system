@@ -3,14 +3,15 @@
 Proyecto académico (PUCMM — Aseguramiento de Calidad de Software) para la gestión de
 inventarios de pequeñas empresas. Monorepo compuesto por un frontend en React (Vite) y
 un backend en Spring Boot 3 (Java 21), con autenticación vía Keycloak y observabilidad
-basada en Prometheus y Grafana.
+basada en el stack CNCF: Prometheus (métricas), Loki (logs), Tempo (trazas) y Grafana
+Alloy como colector OTLP central, todo visualizado en Grafana.
 
 ## Estructura del repositorio
 
 ```
 frontend/   → SPA en React + Vite
 backend/    → API REST en Spring Boot 3 (Java 21)
-observability/ → configuración de Prometheus y Grafana
+observability/ → configuración de Prometheus, Alertmanager, Loki, Tempo, Alloy y Grafana
 scripts/    → scripts auxiliares (init de base de datos, etc.)
 keycloak/   → configuración/exportación del realm
 ```
@@ -23,12 +24,26 @@ infraestructura necesaria para el desarrollo local con un solo comando:
 - **PostgreSQL 16** — base de datos de la aplicación y de Keycloak
 - **Keycloak 24** — Identity & Access Management (IAM)
 - **Backend** — API REST Spring Boot (build local desde `backend/Dockerfile`)
-- **Prometheus** — recolección de métricas
-- **Grafana** — dashboards y visualización
+- **Prometheus** — recolección de métricas (incluye receptor `remote_write` para Alloy)
+- **Alertmanager** — enrutamiento de alertas de Prometheus (reglas: OBS-005, pendiente)
+- **Loki** — almacenamiento de logs estructurados
+- **Tempo** — almacenamiento de trazas distribuidas
+- **Grafana Alloy** — colector OTLP central (gRPC 4317 / HTTP 4318) que enruta métricas
+  a Prometheus, trazas a Tempo y logs a Loki. La instrumentación real del backend con el
+  OTel Java Agent es OBS-001 (pendiente); el pipeline ya queda listo para recibirla.
+- **Grafana** — dashboards y visualización (datasources de Prometheus/Loki/Tempo
+  provisionados automáticamente)
 
 Todos los servicios se conectan a través de la red `inventario-network` y persisten
 sus datos en volúmenes de Docker (`postgres_data`, `keycloak_data`, `prometheus_data`,
-`grafana_data`).
+`grafana_data`, `loki_data`, `tempo_data`, `alertmanager_data`).
+
+> **Nota de versiones:** Loki y Tempo están pineados a `2.9.6` / `2.6.1` (no `:latest`).
+> La serie 3.x más reciente de ambos cambia de forma incompatible el esquema de
+> configuración usado aquí (Tempo 3.x reescribe el pipeline hacia una arquitectura
+> basada en Kafka) y, en el caso de Loki, la imagen `:latest` no trae shell/`wget`,
+> lo que impide un `HEALTHCHECK` de Docker. Alertmanager está pineado a `v0.27.0` por
+> la misma razón de reproducibilidad.
 
 ### Requisitos previos
 
@@ -63,6 +78,10 @@ sus datos en volúmenes de Docker (`postgres_data`, `keycloak_data`, `prometheus
    | Backend (Actuator) | http://localhost:8081/actuator/health | — |
    | Keycloak | http://localhost:8080 | `admin` / `admin` (consola admin) |
    | Prometheus | http://localhost:9090 | — |
+   | Alertmanager | http://localhost:9093 | — |
+   | Loki | http://localhost:3100/ready | — (se consulta desde Grafana Explore) |
+   | Tempo | http://localhost:3200/status | — (se consulta desde Grafana Explore) |
+   | Grafana Alloy (UI) | http://localhost:12345 | — |
    | Grafana | http://localhost:3000 | `admin` / `admin` |
 
 ### Keycloak — realm `inventario` (SEC-001)
@@ -73,13 +92,22 @@ El realm `inventario` se importa automáticamente al levantar Keycloak desde
 - **Clients:** `inventario-frontend` (público, PKCE, redirect `http://localhost:5173/*`)
   y `inventario-backend` (confidencial, secret de dev `inventario-backend-secret`,
   `directAccessGrantsEnabled=true` para pruebas con `curl`).
-- **Permisos (client roles en `inventario-backend`):** `product:view`, `product:manage`.
+- **Scopes (client roles en `inventario-backend`):** `product:view`, `product:manage`,
+  `stock:view`, `stock:manage`, `report:view`, `user:manage`, `audit:view`.
+- **Roles de realm (composite, combinan los scopes anteriores):** `ADMIN`, `MANAGER`,
+  `WAREHOUSE`, `VIEWER`, `AUDITOR` — ver matriz de permisos completa en `CLAUDE.md`
+  (sección 6). Keycloak expande los roles composite al generar el JWT, por lo que
+  `resource_access.inventario-backend.roles` siempre contiene los scopes resueltos
+  (verificado con `curl` para los 5 usuarios de prueba).
 - **Usuarios de prueba:**
 
-  | Usuario | Password | Permisos |
-  |---------|----------|----------|
-  | `admin@test.com` | `admin123` | `product:view`, `product:manage` |
-  | `viewer@test.com` | `viewer123` | `product:view` |
+  | Usuario | Password | Rol de realm | Scopes resueltos en el JWT |
+  |---------|----------|---------------|------------------------------|
+  | `admin@test.com` | `admin123` | `ADMIN` | los 7 scopes |
+  | `manager@test.com` | `manager123` | `MANAGER` | `product:view`, `product:manage`, `stock:view`, `stock:manage`, `report:view` |
+  | `warehouse@test.com` | `warehouse123` | `WAREHOUSE` | `product:view`, `stock:view`, `stock:manage` |
+  | `viewer@test.com` | `viewer123` | `VIEWER` | `product:view`, `stock:view`, `report:view` |
+  | `auditor@test.com` | `auditor123` | `AUDITOR` | `audit:view`, `report:view` |
 
 > Nota: la importación de realm con `IGNORE_EXISTING` solo aplica una vez por
 > volumen. Si se modifica `keycloak/realm.json` y se quiere reimportar, hay que
@@ -347,6 +375,32 @@ Stages del pipeline:
 | Build Docker Image | `docker build -t inventario-backend:${BUILD_NUMBER}` |
 
 Post (siempre): publica resultados JUnit (`backend/build/test-results/test/*.xml`), reporte de cobertura JaCoCo (HTML Publisher) y archiva el JAR (`backend/build/libs/*.jar`).
+
+### Dockerfiles optimizados (CICD-004)
+
+Ambas imágenes usan build multi-stage, corren como usuario no-root y exponen
+`HEALTHCHECK`. No se usan en `docker-compose.dev.yml` (ahí el frontend corre con
+`npm run dev`) — son el artefacto que consume el pipeline CI/CD y `docker-compose.staging.yml`
+(INFRA-004, pendiente).
+
+| Imagen | Build | Runtime | Tamaño (verificado) | Usuario |
+|---|---|---|---|---|
+| `backend/Dockerfile` | `eclipse-temurin:21-jdk-alpine` (Gradle `bootJar`) | `eclipse-temurin:21-jre-alpine` | ~271 MB | `spring` (no-root) |
+| `frontend/Dockerfile` | `node:20-alpine` (`npm ci` + `vite build`) | `nginx:alpine` (puerto **8080**, no 80 — un proceso no-root no puede bindear puertos <1024) | ~63 MB | `nginx` (no-root, reutiliza el usuario ya presente en la imagen base) |
+
+Build y verificación local:
+
+```bash
+docker build -t inventario-backend:dev ./backend
+docker build -t inventario-frontend:dev ./frontend
+
+docker run --rm -p 18080:8080 inventario-frontend:dev
+curl http://localhost:18080/healthz   # -> ok
+```
+
+`frontend/nginx.conf` sirve el build estático (`dist/`) con fallback SPA
+(`try_files ... /index.html`, necesario para las rutas de React Router como
+`/products/:id/edit`) y expone `/healthz` para el `HEALTHCHECK`.
 
 ### Notas
 

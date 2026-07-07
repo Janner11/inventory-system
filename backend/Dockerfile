@@ -19,4 +19,7 @@ COPY --from=build /app/build/libs/*.jar app.jar
 USER spring:spring
 
 EXPOSE 8081
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8081/actuator/health || exit 1
+
 ENTRYPOINT ["java", "-jar", "app.jar"]
