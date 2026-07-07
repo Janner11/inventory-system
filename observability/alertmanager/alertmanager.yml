@@ -1,0 +1,16 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+# En desarrollo no hay integracion de notificaciones (Slack/email/webhook) configurada.
+# Las alertas quedan visibles en la UI de Alertmanager (http://localhost:9093) y en
+# Prometheus (http://localhost:9090/alerts). Las reglas de alerta (rule_files) se
+# implementaran en OBS-005.
+receivers:
+  - name: default
