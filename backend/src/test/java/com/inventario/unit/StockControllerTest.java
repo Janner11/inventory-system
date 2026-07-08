@@ -3,12 +3,17 @@ package com.inventario.unit;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.inventario.config.SecurityConfig;
 import com.inventario.controller.StockController;
+import com.inventario.dto.ProductResponseDTO;
+import com.inventario.dto.StockAdjustmentRequestDTO;
 import com.inventario.dto.StockMovementRequestDTO;
 import com.inventario.dto.StockMovementResponseDTO;
 import com.inventario.entity.MovementType;
+import com.inventario.entity.ProductStatus;
 import com.inventario.exception.InsufficientStockException;
+import com.inventario.exception.ProductInactiveException;
 import com.inventario.exception.ProductNotFoundException;
 import com.inventario.security.JwtAuthConverter;
+import com.inventario.service.ProductService;
 import com.inventario.service.StockService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +27,8 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -50,6 +57,9 @@ class StockControllerTest {
 
     @MockBean
     private StockService stockService;
+
+    @MockBean
+    private ProductService productService;
 
     @Test
     void getRecentMovements_withViewScope_returns200() throws Exception {
@@ -237,12 +247,126 @@ class StockControllerTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void adjustStock_withManageScope_returns201() throws Exception {
+        StockAdjustmentRequestDTO request = buildAdjustmentRequest(7);
+        given(stockService.adjustStock(any())).willReturn(buildResponse(MovementType.ADJUSTMENT, 10, 7, -3));
+
+        mockMvc.perform(post("/api/stock/adjust")
+                        .with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("ADJUSTMENT"))
+                .andExpect(jsonPath("$.newQuantity").value(7));
+    }
+
+    @Test
+    void adjustStock_withoutToken_returns401() throws Exception {
+        StockAdjustmentRequestDTO request = buildAdjustmentRequest(7);
+
+        mockMvc.perform(post("/api/stock/adjust")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void adjustStock_withoutManageScope_returns403() throws Exception {
+        StockAdjustmentRequestDTO request = buildAdjustmentRequest(7);
+
+        mockMvc.perform(post("/api/stock/adjust")
+                        .with(jwt().authorities(new SimpleGrantedAuthority(INSUFFICIENT_SCOPE)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adjustStock_withInvalidData_returns400() throws Exception {
+        StockAdjustmentRequestDTO invalidRequest = new StockAdjustmentRequestDTO(null, -1, "Conteo", null, "admin");
+
+        mockMvc.perform(post("/api/stock/adjust")
+                        .with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidRequest)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void adjustStock_withNoActualChange_returns400() throws Exception {
+        StockAdjustmentRequestDTO request = buildAdjustmentRequest(10);
+        given(stockService.adjustStock(any()))
+                .willThrow(new IllegalArgumentException("El ajuste no genera ningun cambio"));
+
+        mockMvc.perform(post("/api/stock/adjust")
+                        .with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void adjustStock_withNonExistingProduct_returns404() throws Exception {
+        StockAdjustmentRequestDTO request = buildAdjustmentRequest(7);
+        given(stockService.adjustStock(any())).willThrow(new ProductNotFoundException(request.productId()));
+
+        mockMvc.perform(post("/api/stock/adjust")
+                        .with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void adjustStock_withInactiveProduct_returns409() throws Exception {
+        StockAdjustmentRequestDTO request = buildAdjustmentRequest(7);
+        given(stockService.adjustStock(any())).willThrow(new ProductInactiveException("LAP-001"));
+
+        mockMvc.perform(post("/api/stock/adjust")
+                        .with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void getLowStockAlerts_withViewScope_returns200() throws Exception {
+        given(productService.getProductsBelowMinStock()).willReturn(List.of(buildProductResponse()));
+
+        mockMvc.perform(get("/api/stock/alerts").with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].sku").value("LOW-001"));
+    }
+
+    @Test
+    void getLowStockAlerts_withoutToken_returns401() throws Exception {
+        mockMvc.perform(get("/api/stock/alerts"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getLowStockAlerts_withoutViewScope_returns403() throws Exception {
+        mockMvc.perform(get("/api/stock/alerts").with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
+                .andExpect(status().isForbidden());
+    }
+
     private StockMovementRequestDTO buildRequest(int quantity) {
         return new StockMovementRequestDTO(UUID.randomUUID(), quantity, "Movimiento de prueba", null, "admin");
+    }
+
+    private StockAdjustmentRequestDTO buildAdjustmentRequest(int newQuantity) {
+        return new StockAdjustmentRequestDTO(UUID.randomUUID(), newQuantity, "Conteo fisico", null, "admin");
     }
 
     private StockMovementResponseDTO buildResponse(MovementType type, int previousQuantity, int newQuantity, int quantity) {
         return new StockMovementResponseDTO(UUID.randomUUID(), UUID.randomUUID(), "LAP-001", "Laptop",
                 type, previousQuantity, newQuantity, quantity, "Movimiento de prueba", null, "admin", null);
+    }
+
+    private ProductResponseDTO buildProductResponse() {
+        return new ProductResponseDTO(UUID.randomUUID(), "Producto bajo stock", "LOW-001", "desc", "General",
+                new BigDecimal("10.00"), 1, 5, ProductStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now(),
+                "admin", 0L);
     }
 }
