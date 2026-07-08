@@ -189,6 +189,7 @@ class ProductControllerTest {
 
     private ProductResponseDTO buildResponse(UUID id, String sku) {
         return new ProductResponseDTO(id, "Laptop", sku, "Laptop 15 pulgadas", "Electronica",
-                new BigDecimal("999.99"), 10, 2, ProductStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now());
+                new BigDecimal("999.99"), 10, 2, ProductStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now(),
+                "admin", 0L);
     }
 }
