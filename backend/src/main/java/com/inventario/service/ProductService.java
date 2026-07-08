@@ -37,13 +37,6 @@ public class ProductService {
         this.productMapper = productMapper;
     }
 
-    /** Lista completa de productos activos, sin paginar (usado por {@code GET /api/products}, BACK-004). */
-    public List<ProductResponseDTO> getAllProducts() {
-        return productRepository.findByStatus(ProductStatus.ACTIVE).stream()
-                .map(productMapper::toResponseDTO)
-                .toList();
-    }
-
     /**
      * Listado paginado con filtros dinámicos (categoría, status, rango de precio, texto libre).
      * {@code filter} puede ser {@code null} (equivalente a {@link ProductFilterDTO#empty()}).
