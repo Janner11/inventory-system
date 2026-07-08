@@ -13,7 +13,8 @@ import StockPage from '../../src/pages/StockPage';
 vi.mock('../../src/hooks/useAuth');
 
 vi.mock('../../src/services/productService', () => ({
-  getProducts: vi.fn().mockResolvedValue([]),
+  getProducts: vi.fn().mockResolvedValue({ content: [], totalElements: 0, totalPages: 0, number: 0, size: 20 }),
+  getCriticalProducts: vi.fn().mockResolvedValue([]),
 }));
 
 const authenticatedUser = {

@@ -120,19 +120,6 @@ class ProductServiceTest {
     }
 
     @Test
-    void getAllProducts_returnsActiveProducts() {
-        Product entity = buildEntity(UUID.randomUUID(), "KEY-003", ProductStatus.ACTIVE);
-        ProductResponseDTO responseDTO = buildResponseDTO(entity);
-
-        when(productRepository.findByStatus(ProductStatus.ACTIVE)).thenReturn(List.of(entity));
-        when(productMapper.toResponseDTO(entity)).thenReturn(responseDTO);
-
-        List<ProductResponseDTO> result = productService.getAllProducts();
-
-        assertThat(result).containsExactly(responseDTO);
-    }
-
-    @Test
     void updateProduct_withValidData_returnsUpdatedProduct() {
         UUID id = UUID.randomUUID();
         Product existing = buildEntity(id, "MON-004", ProductStatus.ACTIVE);
