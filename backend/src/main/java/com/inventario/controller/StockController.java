@@ -1,7 +1,10 @@
 package com.inventario.controller;
 
+import com.inventario.dto.ProductResponseDTO;
+import com.inventario.dto.StockAdjustmentRequestDTO;
 import com.inventario.dto.StockMovementRequestDTO;
 import com.inventario.dto.StockMovementResponseDTO;
+import com.inventario.service.ProductService;
 import com.inventario.service.StockService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -31,9 +35,11 @@ import java.util.UUID;
 public class StockController {
 
     private final StockService stockService;
+    private final ProductService productService;
 
-    public StockController(StockService stockService) {
+    public StockController(StockService stockService, ProductService productService) {
         this.stockService = stockService;
+        this.productService = productService;
     }
 
     @GetMapping("/movements")
@@ -89,5 +95,29 @@ public class StockController {
     @ApiResponse(responseCode = "422", description = "Stock insuficiente", content = @Content)
     public StockMovementResponseDTO registerExit(@Valid @RequestBody StockMovementRequestDTO request) {
         return stockService.registerExit(request);
+    }
+
+    @PostMapping("/adjust")
+    @PreAuthorize("hasAuthority('SCOPE_stock:manage')")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Ajustar stock a una cantidad absoluta (ej. conteo fisico)")
+    @ApiResponse(responseCode = "201", description = "Ajuste registrado")
+    @ApiResponse(responseCode = "400", description = "Datos invalidos, o el ajuste no genera ningun cambio", content = @Content)
+    @ApiResponse(responseCode = "401", description = "No autenticado", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Sin permiso (scope insuficiente)", content = @Content)
+    @ApiResponse(responseCode = "404", description = "Producto no encontrado", content = @Content)
+    @ApiResponse(responseCode = "409", description = "Producto inactivo", content = @Content)
+    public StockMovementResponseDTO adjustStock(@Valid @RequestBody StockAdjustmentRequestDTO request) {
+        return stockService.adjustStock(request);
+    }
+
+    @GetMapping("/alerts")
+    @PreAuthorize("hasAuthority('SCOPE_stock:view')")
+    @Operation(summary = "Listar productos activos bajo su stock minimo")
+    @ApiResponse(responseCode = "200", description = "Lista de productos en alerta de stock bajo")
+    @ApiResponse(responseCode = "401", description = "No autenticado", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Sin permiso (scope insuficiente)", content = @Content)
+    public List<ProductResponseDTO> getLowStockAlerts() {
+        return productService.getProductsBelowMinStock();
     }
 }
