@@ -27,7 +27,7 @@ public class AuditController {
     }
 
     @GetMapping("/products/{id}/revisions")
-    @PreAuthorize("hasAuthority('SCOPE_product:view')")
+    @PreAuthorize("hasAuthority('SCOPE_audit:view')")
     @Operation(summary = "Historial de revisiones (auditoria) de un producto")
     @ApiResponse(responseCode = "200", description = "Historial de revisiones")
     @ApiResponse(responseCode = "404", description = "Producto sin historial de auditoria", content = @Content)

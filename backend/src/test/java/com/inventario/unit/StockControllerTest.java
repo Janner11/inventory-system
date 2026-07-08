@@ -32,8 +32,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({SecurityConfig.class, JwtAuthConverter.class})
 class StockControllerTest {
 
-    private static final String VIEW_SCOPE = "SCOPE_product:view";
-    private static final String MANAGE_SCOPE = "SCOPE_product:manage";
+    private static final String INSUFFICIENT_SCOPE = "SCOPE_product:view";
+    private static final String MANAGE_SCOPE = "SCOPE_stock:manage";
 
     @Autowired
     private MockMvc mockMvc;
@@ -73,7 +73,7 @@ class StockControllerTest {
         StockMovementRequestDTO request = buildRequest(5);
 
         mockMvc.perform(post("/api/stock/entry")
-                        .with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE)))
+                        .with(jwt().authorities(new SimpleGrantedAuthority(INSUFFICIENT_SCOPE)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden());
@@ -131,7 +131,7 @@ class StockControllerTest {
         StockMovementRequestDTO request = buildRequest(4);
 
         mockMvc.perform(post("/api/stock/exit")
-                        .with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE)))
+                        .with(jwt().authorities(new SimpleGrantedAuthority(INSUFFICIENT_SCOPE)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isForbidden());

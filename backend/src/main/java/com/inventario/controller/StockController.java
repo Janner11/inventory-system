@@ -28,7 +28,7 @@ public class StockController {
     }
 
     @PostMapping("/entry")
-    @PreAuthorize("hasAuthority('SCOPE_product:manage')")
+    @PreAuthorize("hasAuthority('SCOPE_stock:manage')")
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Registrar entrada de stock")
     @ApiResponse(responseCode = "201", description = "Entrada registrada")
@@ -39,7 +39,7 @@ public class StockController {
     }
 
     @PostMapping("/exit")
-    @PreAuthorize("hasAuthority('SCOPE_product:manage')")
+    @PreAuthorize("hasAuthority('SCOPE_stock:manage')")
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Registrar salida de stock")
     @ApiResponse(responseCode = "201", description = "Salida registrada")
