@@ -270,6 +270,7 @@ class ProductServiceTest {
         return new ProductResponseDTO(
                 product.getId(), product.getName(), product.getSku(), product.getDescription(),
                 product.getCategory(), product.getPrice(), product.getQuantity(), product.getMinStock(),
-                product.getStatus(), LocalDateTime.now(), LocalDateTime.now());
+                product.getStatus(), LocalDateTime.now(), LocalDateTime.now(),
+                product.getCreatedBy(), product.getVersion());
     }
 }
