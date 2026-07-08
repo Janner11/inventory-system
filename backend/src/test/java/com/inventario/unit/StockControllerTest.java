@@ -15,15 +15,21 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -34,6 +40,7 @@ class StockControllerTest {
 
     private static final String INSUFFICIENT_SCOPE = "SCOPE_product:view";
     private static final String MANAGE_SCOPE = "SCOPE_stock:manage";
+    private static final String VIEW_SCOPE = "SCOPE_stock:view";
 
     @Autowired
     private MockMvc mockMvc;
@@ -43,6 +50,64 @@ class StockControllerTest {
 
     @MockBean
     private StockService stockService;
+
+    @Test
+    void getRecentMovements_withViewScope_returns200() throws Exception {
+        Page<StockMovementResponseDTO> page = new PageImpl<>(List.of(buildResponse(MovementType.ENTRY, 10, 15, 5)));
+        given(stockService.getRecentMovements(any(Pageable.class))).willReturn(page);
+
+        mockMvc.perform(get("/api/stock/movements").with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].type").value("ENTRY"));
+    }
+
+    @Test
+    void getRecentMovements_withoutToken_returns401() throws Exception {
+        mockMvc.perform(get("/api/stock/movements"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getRecentMovements_withoutViewScope_returns403() throws Exception {
+        mockMvc.perform(get("/api/stock/movements").with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getMovementsByProduct_withViewScope_returns200() throws Exception {
+        UUID productId = UUID.randomUUID();
+        Page<StockMovementResponseDTO> page = new PageImpl<>(List.of(buildResponse(MovementType.EXIT, 10, 6, -4)));
+        given(stockService.getMovementsByProduct(eq(productId), any(Pageable.class))).willReturn(page);
+
+        mockMvc.perform(get("/api/stock/movements/{productId}", productId)
+                        .with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].type").value("EXIT"));
+    }
+
+    @Test
+    void getMovementsByProduct_withNonExistingProduct_returns404() throws Exception {
+        UUID productId = UUID.randomUUID();
+        given(stockService.getMovementsByProduct(eq(productId), any(Pageable.class)))
+                .willThrow(new ProductNotFoundException(productId));
+
+        mockMvc.perform(get("/api/stock/movements/{productId}", productId)
+                        .with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getMovementsByProduct_withoutToken_returns401() throws Exception {
+        mockMvc.perform(get("/api/stock/movements/{productId}", UUID.randomUUID()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getMovementsByProduct_withoutViewScope_returns403() throws Exception {
+        mockMvc.perform(get("/api/stock/movements/{productId}", UUID.randomUUID())
+                        .with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     void registerEntry_withManageScope_returns201() throws Exception {

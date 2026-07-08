@@ -23,7 +23,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifica que Flyway aplique todas las migraciones (V1-V5) sin errores contra un
+ * Verifica que Flyway aplique todas las migraciones (V1-V6) sin errores contra un
  * PostgreSQL real (Testcontainers) y que la tabla {@code products} quede con el
  * esquema esperado por {@link com.inventario.entity.Product} (BACK-002).
  */
@@ -49,7 +49,7 @@ class FlywayMigrationTest {
     private DataSource dataSource;
 
     @Test
-    void flyway_aplicaV1AV5ExitosamenteYEnOrden() throws Exception {
+    void flyway_aplicaV1AV6ExitosamenteYEnOrden() throws Exception {
         List<String> versions = new ArrayList<>();
 
         try (Connection connection = dataSource.getConnection();
@@ -62,7 +62,7 @@ class FlywayMigrationTest {
             }
         }
 
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6");
     }
 
     @Test
