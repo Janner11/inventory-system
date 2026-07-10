@@ -24,13 +24,15 @@ infraestructura necesaria para el desarrollo local con un solo comando:
 - **PostgreSQL 16** — base de datos de la aplicación y de Keycloak
 - **Keycloak 24** — Identity & Access Management (IAM)
 - **Backend** — API REST Spring Boot (build local desde `backend/Dockerfile`)
-- **Prometheus** — recolección de métricas (incluye receptor `remote_write` para Alloy)
+- **Prometheus** — recolección de métricas: scrapea al backend (`/actuator/prometheus`)
+  y al propio Alloy (self-monitoring del pipeline), además de exponer el receptor
+  `remote_write` que usa Alloy para reenviar las métricas OTLP
 - **Alertmanager** — enrutamiento de alertas de Prometheus (reglas: OBS-005, pendiente)
 - **Loki** — almacenamiento de logs estructurados
 - **Tempo** — almacenamiento de trazas distribuidas
 - **Grafana Alloy** — colector OTLP central (gRPC 4317 / HTTP 4318) que enruta métricas
-  a Prometheus, trazas a Tempo y logs a Loki. La instrumentación real del backend con el
-  OTel Java Agent es OBS-001 (pendiente); el pipeline ya queda listo para recibirla.
+  a Prometheus, trazas a Tempo y logs a Loki. El backend ya lo alimenta con datos reales
+  vía el OTel Java Agent (OBS-001) — ver "Pipeline de observabilidad (OBS-002)" abajo.
 - **Grafana** — dashboards y visualización (datasources de Prometheus/Loki/Tempo
   provisionados automáticamente)
 
@@ -370,6 +372,33 @@ respectivamente.
 > receptor de Alloy en el puerto `4317` es grpc-only — sin esta variable el
 > agente falla en bucle con `Connection reset` al exportar. Ver "Detalle de
 > OBS-001" en `CLAUDE.md` para el diagnóstico completo.
+
+### Pipeline de observabilidad (OBS-002)
+
+La configuración de Prometheus y del colector Grafana Alloy (`observability/prometheus/prometheus.yml`,
+`observability/alloy/alloy-config.alloy`) es la pieza central que hace posible OBS-001:
+
+- **Alloy** recibe OTLP en `4317` (gRPC) / `4318` (HTTP) y enruta con un único
+  pipeline (`otelcol.receiver.otlp` → `otelcol.processor.batch`) hacia 3 exporters en
+  paralelo: `otelcol.exporter.prometheus` (vía `prometheus.remote_write` →
+  `http://prometheus:9090/api/v1/write`), `otelcol.exporter.otlp` (→ Tempo) y
+  `otelcol.exporter.loki` (→ Loki).
+- **Prometheus** habilita `--web.enable-remote-write-receiver` (requerido para recibir
+  el `remote_write` de Alloy) y scrapea 3 targets: `prometheus` (self), `inventario-backend`
+  (Micrometer, OBS-004) y **`alloy`** (`alloy:12345/metrics` — métricas propias del
+  colector: `alloy_component_*`, `otelcol_receiver_*`, `otelcol_exporter_*`).
+- El job `alloy` es **self-monitoring del pipeline de observabilidad**: permite
+  detectar en Prometheus si el colector está sano (`alloy_component_controller_running_components`),
+  si hay backlog en las colas de exportación (`otelcol_exporter_queue_size`) o si
+  algún exporter está fallando (`otelcol_exporter_*_failed`), sin depender de que las
+  trazas/logs/métricas de negocio lleguen correctamente a destino para notarlo.
+
+Verificación rápida con el stack levantado:
+
+```bash
+curl -s http://localhost:9090/api/v1/targets   # los 3 jobs en status "up"
+curl -s http://localhost:12345/metrics | head  # métricas crudas de Alloy
+```
 
 ### CI/CD
 

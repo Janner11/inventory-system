@@ -19,3 +19,10 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["backend:8081"]
+
+  # OBS-002: self-monitoring del colector OTLP (salud del pipeline: colas de
+  # exportacion, spans/logs aceptados vs. fallidos por exporter). Alloy expone
+  # sus metricas Prometheus-compatibles en /metrics (no en la ruta OTLP).
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy:12345"]
