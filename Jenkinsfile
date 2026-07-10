@@ -34,7 +34,7 @@ pipeline {
         stage('Unit Tests') {
             steps {
                 dir('backend') {
-                    sh './gradlew test --tests "com.inventario.unit.*" jacocoTestReport'
+                    sh './gradlew test --tests "com.inventario.unit.*" jacocoTestReport jacocoTestCoverageVerification'
                 }
             }
         }

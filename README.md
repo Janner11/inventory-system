@@ -426,7 +426,7 @@ Se ejecuta automáticamente en cada push a `develop` y en cada PR contra `develo
 | Job | Comando | Artefacto |
 |---|---|---|
 | Build | `./gradlew build -x test` | — |
-| Unit Tests | `./gradlew test --tests "com.inventario.unit.*" jacocoTestReport` | Resultados XML + reporte JaCoCo |
+| Unit Tests | `./gradlew test --tests "com.inventario.unit.*" jacocoTestReport jacocoTestCoverageVerification` | Resultados XML + reporte JaCoCo |
 | Integration & API Tests | `./gradlew test --tests "com.inventario.integration.*" --tests "com.inventario.api.*"` | Resultados XML |
 
 #### Jenkins (`Jenkinsfile`)
@@ -447,11 +447,20 @@ Stages del pipeline:
 |---|---|
 | Checkout | `checkout scm` + `chmod +x gradlew` |
 | Build | `./gradlew build -x test` |
-| Unit Tests | `./gradlew test --tests "com.inventario.unit.*" jacocoTestReport` |
+| Unit Tests | `./gradlew test --tests "com.inventario.unit.*" jacocoTestReport jacocoTestCoverageVerification` |
 | Integration & API Tests | `./gradlew test --tests "com.inventario.integration.*" --tests "com.inventario.api.*"` |
 | Build Docker Image | `docker build -t inventario-backend:${BUILD_NUMBER}` |
 
 Post (siempre): publica resultados JUnit (`backend/build/test-results/test/*.xml`), reporte de cobertura JaCoCo (HTML Publisher) y archiva el JAR (`backend/build/libs/*.jar`).
+
+> **JaCoCo obligatorio (TEST-001):** `jacocoTestCoverageVerification`
+> (`backend/build.gradle.kts`) falla el build si `ProductService`/
+> `StockService` caen por debajo de 85% de líneas / 65% de branches — hoy
+> están en 100%/100% y 100%/86%, con margen de sobra. El gate está acotado
+> a esas 2 clases (no a todo el proyecto) a propósito: el stage "Unit Tests"
+> corre solo `com.inventario.unit.*`, y con ese filtro la cobertura global
+> del proyecto cae a ~67% (repositorios/mappers/config solo se ejercitan
+> con los tests de integración de TEST-002, en otro stage).
 
 ### Dockerfiles optimizados (CICD-004)
 
