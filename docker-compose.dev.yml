@@ -10,6 +10,9 @@ volumes:
   keycloak_data:
   prometheus_data:
   grafana_data:
+  loki_data:
+  tempo_data:
+  alertmanager_data:
 
 services:
   postgres:
@@ -100,11 +103,109 @@ services:
     image: prom/prometheus:latest
     container_name: inventario-prometheus
     restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      # Habilita el endpoint remote_write usado por Alloy para reenviar metricas OTLP
+      - "--web.enable-remote-write-receiver"
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - inventario-network
+
+  alertmanager:
+    # Pineado a v0.27.0 (en vez de :latest) por reproducibilidad, igual que loki/tempo abajo.
+    image: prom/alertmanager:v0.27.0
+    container_name: inventario-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:9093/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - inventario-network
+
+  loki:
+    # Pineado a 2.9.6 (no :latest): la serie 3.x mas reciente cambia el esquema de
+    # storage/wal y ademas la imagen queda sin shell/wget, lo que impide un healthcheck
+    # CMD-SHELL. 2.9.x es la version estable y documentada de la serie usada en el resto
+    # del stack (Grafana Explore, provisioning) y sigue trayendo busybox (wget/sh).
+    image: grafana/loki:2.9.6
+    container_name: inventario-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - inventario-network
+
+  tempo:
+    # Pineado a 2.6.1: la serie 3.x reestructura el config (arquitectura basada en Kafka,
+    # backend-scheduler/backend-worker) y ya no acepta el esquema classic
+    # ingester/compactor/storage.trace.local usado aqui. 2.6.1 es la version estable,
+    # ampliamente documentada, con la que se implemento esta migracion.
+    image: grafana/tempo:2.6.1
+    container_name: inventario-tempo
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo-config.yml
+    volumes:
+      - ./observability/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "${TEMPO_PORT:-3200}:3200"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3200/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - inventario-network
+
+  alloy:
+    # Sin HEALTHCHECK de contenedor: la imagen grafana/alloy no incluye wget/curl (solo
+    # /usr/bin/sh), igual que prometheus/grafana en este mismo archivo. Su disponibilidad
+    # se valida manualmente vía la UI en :12345 (ver README).
+    image: grafana/alloy:latest
+    container_name: inventario-alloy
+    restart: unless-stopped
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - "/etc/alloy/config.alloy"
+    volumes:
+      - ./observability/alloy/alloy-config.alloy:/etc/alloy/config.alloy:ro
+    ports:
+      - "${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
+      - "${ALLOY_OTLP_HTTP_PORT:-4318}:4318"
+      - "${ALLOY_UI_PORT:-12345}:12345"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
     networks:
       - inventario-network
 
@@ -122,5 +223,7 @@ services:
       - "${GRAFANA_PORT:-3000}:3000"
     depends_on:
       - prometheus
+      - loki
+      - tempo
     networks:
       - inventario-network

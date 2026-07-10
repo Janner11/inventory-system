@@ -39,6 +39,72 @@
     }
   ],
   "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "Acceso total: todos los scopes de productos, stock, reportes, usuarios y auditoria",
+        "composite": true,
+        "composites": {
+          "client": {
+            "inventario-backend": [
+              "product:view",
+              "product:manage",
+              "stock:view",
+              "stock:manage",
+              "report:view",
+              "user:manage",
+              "audit:view"
+            ]
+          }
+        }
+      },
+      {
+        "name": "MANAGER",
+        "description": "Gestion de productos y stock, mas visibilidad de reportes",
+        "composite": true,
+        "composites": {
+          "client": {
+            "inventario-backend": [
+              "product:view",
+              "product:manage",
+              "stock:view",
+              "stock:manage",
+              "report:view"
+            ]
+          }
+        }
+      },
+      {
+        "name": "WAREHOUSE",
+        "description": "Operacion de almacen: gestion de stock y solo lectura de productos",
+        "composite": true,
+        "composites": {
+          "client": {
+            "inventario-backend": ["product:view", "stock:view", "stock:manage"]
+          }
+        }
+      },
+      {
+        "name": "VIEWER",
+        "description": "Solo lectura de productos, stock y reportes",
+        "composite": true,
+        "composites": {
+          "client": {
+            "inventario-backend": ["product:view", "stock:view", "report:view"]
+          }
+        }
+      },
+      {
+        "name": "AUDITOR",
+        "description": "Consulta de auditoria y reportes, sin acceso de gestion",
+        "composite": true,
+        "composites": {
+          "client": {
+            "inventario-backend": ["audit:view", "report:view"]
+          }
+        }
+      }
+    ],
     "client": {
       "inventario-backend": [
         {
@@ -48,6 +114,26 @@
         {
           "name": "product:manage",
           "description": "Crear, editar y eliminar productos"
+        },
+        {
+          "name": "stock:view",
+          "description": "Ver existencias e historial de movimientos de stock"
+        },
+        {
+          "name": "stock:manage",
+          "description": "Registrar entradas, salidas y ajustes de stock"
+        },
+        {
+          "name": "report:view",
+          "description": "Ver dashboard y reportes"
+        },
+        {
+          "name": "user:manage",
+          "description": "Gestionar usuarios, roles y permisos"
+        },
+        {
+          "name": "audit:view",
+          "description": "Consultar historial de auditoria"
         }
       ]
     }
@@ -67,9 +153,39 @@
           "temporary": false
         }
       ],
-      "clientRoles": {
-        "inventario-backend": ["product:view", "product:manage"]
-      }
+      "realmRoles": ["ADMIN"]
+    },
+    {
+      "username": "manager@test.com",
+      "email": "manager@test.com",
+      "firstName": "Manager",
+      "lastName": "Test",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "manager123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["MANAGER"]
+    },
+    {
+      "username": "warehouse@test.com",
+      "email": "warehouse@test.com",
+      "firstName": "Warehouse",
+      "lastName": "Test",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "warehouse123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["WAREHOUSE"]
     },
     {
       "username": "viewer@test.com",
@@ -85,9 +201,23 @@
           "temporary": false
         }
       ],
-      "clientRoles": {
-        "inventario-backend": ["product:view"]
-      }
+      "realmRoles": ["VIEWER"]
+    },
+    {
+      "username": "auditor@test.com",
+      "email": "auditor@test.com",
+      "firstName": "Auditor",
+      "lastName": "Test",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "auditor123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["AUDITOR"]
     }
   ]
 }

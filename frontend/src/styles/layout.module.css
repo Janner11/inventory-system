@@ -90,6 +90,50 @@
   padding: var(--spacing-lg);
 }
 
+.breadcrumb {
+  margin-bottom: var(--spacing-md);
+}
+
+.breadcrumbList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 0.875rem;
+  color: var(--color-text);
+}
+
+.breadcrumbItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.breadcrumbItem a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.breadcrumbItem a:hover {
+  text-decoration: underline;
+}
+
+.breadcrumbItem a:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.breadcrumbItem span[aria-current='page'] {
+  font-weight: 600;
+}
+
+.breadcrumbSeparator {
+  color: var(--color-border);
+}
+
 /* Tablet */
 @media (min-width: 768px) and (max-width: 1023px) {
   .sidebar {

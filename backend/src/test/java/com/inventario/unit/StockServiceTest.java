@@ -1,5 +1,9 @@
 package com.inventario.unit;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.inventario.dto.StockAdjustmentRequestDTO;
 import com.inventario.dto.StockMovementRequestDTO;
 import com.inventario.dto.StockMovementResponseDTO;
@@ -14,14 +18,21 @@ import com.inventario.mapper.StockMovementMapper;
 import com.inventario.repository.ProductRepository;
 import com.inventario.repository.StockMovementRepository;
 import com.inventario.service.StockService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,10 +56,24 @@ class StockServiceTest {
     private StockMovementMapper stockMovementMapper;
 
     private StockService stockService;
+    private ListAppender<ILoggingEvent> logAppender;
 
     @BeforeEach
     void setUp() {
         stockService = new StockService(productRepository, stockMovementRepository, stockMovementMapper);
+
+        logAppender = new ListAppender<>();
+        logAppender.start();
+        stockServiceLogger().addAppender(logAppender);
+    }
+
+    @AfterEach
+    void tearDown() {
+        stockServiceLogger().detachAppender(logAppender);
+    }
+
+    private Logger stockServiceLogger() {
+        return (Logger) LoggerFactory.getLogger(StockService.class);
     }
 
     @Test
@@ -182,6 +207,102 @@ class StockServiceTest {
         assertThat(product.getQuantity()).isEqualTo(3);
         assertThat(product.getQuantity()).isLessThan(product.getMinStock());
         assertThat(result).isNotNull();
+    }
+
+    @Test
+    void registerExit_whenResultEqualsMinStock_logsLowStockWarning() {
+        UUID productId = UUID.randomUUID();
+        Product product = buildProduct(productId, "MON-005", 5, 3, ProductStatus.ACTIVE);
+        StockMovementRequestDTO request = new StockMovementRequestDTO(productId, 2, "Venta", null, "admin");
+
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(productRepository.save(any(Product.class))).thenReturn(product);
+        when(stockMovementRepository.save(any(StockMovement.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(stockMovementMapper.toResponseDTO(any(StockMovement.class))).thenReturn(mockResponse());
+
+        stockService.registerExit(request);
+
+        assertThat(product.getQuantity()).isEqualTo(3);
+        assertThat(product.getQuantity()).isEqualTo(product.getMinStock());
+        assertThat(logAppender.list)
+                .anyMatch(event -> event.getLevel() == Level.WARN
+                        && event.getFormattedMessage().contains("Alerta de stock bajo")
+                        && event.getFormattedMessage().contains("MON-005"));
+    }
+
+    @Test
+    void registerEntry_whenResultAboveMinStock_doesNotLogLowStockWarning() {
+        UUID productId = UUID.randomUUID();
+        Product product = buildProduct(productId, "MON-006", 10, 2, ProductStatus.ACTIVE);
+        StockMovementRequestDTO request = new StockMovementRequestDTO(productId, 5, "Reabastecimiento", null, "admin");
+
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(productRepository.save(any(Product.class))).thenReturn(product);
+        when(stockMovementRepository.save(any(StockMovement.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(stockMovementMapper.toResponseDTO(any(StockMovement.class))).thenReturn(mockResponse());
+
+        stockService.registerEntry(request);
+
+        assertThat(logAppender.list).noneMatch(event -> event.getLevel() == Level.WARN);
+    }
+
+    @Test
+    void adjustStock_withSameQuantity_throwsIllegalArgumentExceptionBeforeTouchingRepository() {
+        UUID productId = UUID.randomUUID();
+        Product product = buildProduct(productId, "KEY-004", 10, 2, ProductStatus.ACTIVE);
+        StockAdjustmentRequestDTO request = new StockAdjustmentRequestDTO(productId, 10, "Conteo fisico", null, "admin");
+
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+
+        assertThatThrownBy(() -> stockService.adjustStock(request))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(product.getQuantity()).isEqualTo(10);
+        verify(productRepository, never()).save(any());
+        verify(stockMovementRepository, never()).save(any());
+    }
+
+    @Test
+    void getMovementsByProduct_withExistingProduct_returnsPagedHistory() {
+        UUID productId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 10);
+        StockMovement movement = new StockMovement();
+        Page<StockMovement> page = new PageImpl<>(List.of(movement), pageable, 1);
+
+        when(productRepository.existsById(productId)).thenReturn(true);
+        when(stockMovementRepository.findByProductId(productId, pageable)).thenReturn(page);
+        when(stockMovementMapper.toResponseDTO(movement)).thenReturn(mockResponse());
+
+        Page<StockMovementResponseDTO> result = stockService.getMovementsByProduct(productId, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent()).hasSize(1);
+    }
+
+    @Test
+    void getMovementsByProduct_withNonExistingProduct_throwsProductNotFoundException() {
+        UUID productId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 10);
+        when(productRepository.existsById(productId)).thenReturn(false);
+
+        assertThatThrownBy(() -> stockService.getMovementsByProduct(productId, pageable))
+                .isInstanceOf(ProductNotFoundException.class);
+
+        verify(stockMovementRepository, never()).findByProductId(any(), any());
+    }
+
+    @Test
+    void getRecentMovements_returnsPagedGlobalHistory() {
+        Pageable pageable = PageRequest.of(0, 10);
+        StockMovement movement = new StockMovement();
+        Page<StockMovement> page = new PageImpl<>(List.of(movement), pageable, 1);
+
+        when(stockMovementRepository.findAllByOrderByCreatedAtDesc(pageable)).thenReturn(page);
+        when(stockMovementMapper.toResponseDTO(movement)).thenReturn(mockResponse());
+
+        Page<StockMovementResponseDTO> result = stockService.getRecentMovements(pageable);
+
+        assertThat(result.getContent()).hasSize(1);
     }
 
     private Product buildProduct(UUID id, String sku, int quantity, int minStock, ProductStatus status) {

@@ -17,6 +17,8 @@ public record ProductResponseDTO(
         Integer minStock,
         ProductStatus status,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        String createdBy,
+        Long version
 ) {
 }
