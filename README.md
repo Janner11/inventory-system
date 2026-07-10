@@ -28,7 +28,9 @@ infraestructura necesaria para el desarrollo local con un solo comando:
   y al propio Alloy (self-monitoring del pipeline), además de exponer el receptor
   `remote_write` que usa Alloy para reenviar las métricas OTLP
 - **Alertmanager** — enrutamiento de alertas de Prometheus (reglas: OBS-005, pendiente)
-- **Loki** — almacenamiento de logs estructurados
+- **Loki** — almacenamiento de logs estructurados, con retención de 7 días y
+  límites de ingesta configurados (OBS-003, ver
+  [`docs/observability/loki-queries.md`](docs/observability/loki-queries.md))
 - **Tempo** — almacenamiento de trazas distribuidas
 - **Grafana Alloy** — colector OTLP central (gRPC 4317 / HTTP 4318) que enruta métricas
   a Prometheus, trazas a Tempo y logs a Loki. El backend ya lo alimenta con datos reales
@@ -360,7 +362,8 @@ respectivamente.
   `logback-spring.xml` lee esos valores del MDC que el agente puebla
   automáticamente. Desde Grafana → Explore → datasource `Loki`, cada log
   tiene un botón "TraceID" (derived field) que salta directo a su trace en
-  Tempo.
+  Tempo. Más consultas LogQL de referencia en
+  [`docs/observability/loki-queries.md`](docs/observability/loki-queries.md).
 - **Métricas OTel**: además de las métricas de Micrometer que ya scrapea
   Prometheus (`/actuator/prometheus`, OBS-004), el agente exporta sus propias
   métricas de runtime JVM (`target_info`, `jvm_memory_*`, con label
