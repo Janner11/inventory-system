@@ -340,6 +340,37 @@ carga el JSON automáticamente.
 > avance. Los otros 3 quedan pendientes (requieren Node Exporter, métricas de
 > negocio y métricas de seguridad que el backend aún no expone).
 
+### Trazas distribuidas y logs correlacionados (OBS-001)
+
+El backend corre instrumentado automáticamente por el
+[OpenTelemetry Java Agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation)
+(`-javaagent:/app/otel-javaagent.jar`, inyectado vía `JAVA_TOOL_OPTIONS` en el
+`Dockerfile`, sin cambios en el código de producción — ADR-006). Exporta
+trazas, métricas y logs por OTLP/gRPC a Grafana Alloy (`http://alloy:4317`,
+listo desde INFRA-003), que las enruta a Tempo, Prometheus y Loki
+respectivamente.
+
+- **Trazas**: cada request HTTP genera un trace visible en Tempo
+  (`http://localhost:3200`, o desde Grafana → Explore → datasource `Tempo`).
+- **Logs correlacionados**: la consola del backend (`docker logs inventario-backend`)
+  imprime `[traceId=...] [spanId=...]` en cada línea de log emitida dentro de
+  un request (vacío fuera de un span activo, ej. en el arranque) —
+  `logback-spring.xml` lee esos valores del MDC que el agente puebla
+  automáticamente. Desde Grafana → Explore → datasource `Loki`, cada log
+  tiene un botón "TraceID" (derived field) que salta directo a su trace en
+  Tempo.
+- **Métricas OTel**: además de las métricas de Micrometer que ya scrapea
+  Prometheus (`/actuator/prometheus`, OBS-004), el agente exporta sus propias
+  métricas de runtime JVM (`target_info`, `jvm_memory_*`, con label
+  `job="inventario-backend"` — coexisten con las de Micrometer sin colisionar
+  porque difieren en el label `instance`).
+
+> ⚠️ **Variable crítica**: `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` es obligatoria.
+> El SDK de OTel usa `http/protobuf` por defecto si no se especifica, pero el
+> receptor de Alloy en el puerto `4317` es grpc-only — sin esta variable el
+> agente falla en bucle con `Connection reset` al exportar. Ver "Detalle de
+> OBS-001" en `CLAUDE.md` para el diagnóstico completo.
+
 ### CI/CD
 
 #### GitHub Actions (`.github/workflows/ci.yml`)
