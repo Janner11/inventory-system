@@ -39,6 +39,10 @@ export function useProduct(id) {
     queryKey: ['products', id],
     queryFn: () => getProductById(id),
     enabled: Boolean(id),
+    // Un producto inexistente/eliminado (404) nunca se resuelve reintentando: sin esto,
+    // React Query reintenta 3 veces con backoff (~7-10s) antes de mostrar el error en
+    // ProductFormPage, dejando "Cargando producto..." visible innecesariamente.
+    retry: false,
   });
 }
 
