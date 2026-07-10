@@ -26,3 +26,8 @@ scrape_configs:
   - job_name: alloy
     static_configs:
       - targets: ["alloy:12345"]
+
+  # OBS-004: metricas de CPU/RAM/red por contenedor (dashboard "Infraestructura").
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]

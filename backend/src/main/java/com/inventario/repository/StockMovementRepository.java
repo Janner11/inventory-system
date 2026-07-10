@@ -1,5 +1,6 @@
 package com.inventario.repository;
 
+import com.inventario.entity.MovementType;
 import com.inventario.entity.StockMovement;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -17,6 +18,8 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, UU
     Page<StockMovement> findByProductId(@Param("productId") UUID productId, Pageable pageable);
 
     Page<StockMovement> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    long countByType(MovementType type);
 
     /**
      * Productos con mas movimientos desde {@code since}, ordenados de mayor a menor cantidad de

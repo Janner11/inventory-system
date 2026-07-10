@@ -134,6 +134,25 @@ services:
     networks:
       - inventario-network
 
+  cadvisor:
+    # OBS-004 (dashboard "Infraestructura"): metricas de CPU/RAM/red por contenedor
+    # (container_cpu_usage_seconds_total, container_memory_usage_bytes,
+    # container_network_*_bytes_total), con label "name" = nombre del contenedor.
+    # La imagen trae su propio HEALTHCHECK (a diferencia de prometheus/grafana/alloy
+    # en este archivo, que no traen wget/curl/sh) - queda "healthy" automaticamente.
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: inventario-cadvisor
+    restart: unless-stopped
+    ports:
+      - "${CADVISOR_PORT:-8085}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - inventario-network
+
   alertmanager:
     # Pineado a v0.27.0 (en vez de :latest) por reproducibilidad, igual que loki/tempo abajo.
     image: prom/alertmanager:v0.27.0
