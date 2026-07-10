@@ -5,7 +5,6 @@ import com.inventario.config.SecurityConfig;
 import com.inventario.controller.ProductController;
 import com.inventario.dto.ProductRequestDTO;
 import com.inventario.dto.ProductResponseDTO;
-import com.inventario.dto.ProductStatsDTO;
 import com.inventario.entity.ProductStatus;
 import com.inventario.exception.DuplicateSkuException;
 import com.inventario.exception.ProductNotFoundException;
@@ -16,9 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
@@ -45,7 +41,6 @@ class ProductControllerTest {
 
     private static final String VIEW_SCOPE = "SCOPE_product:view";
     private static final String MANAGE_SCOPE = "SCOPE_product:manage";
-    private static final String REPORT_VIEW_SCOPE = "SCOPE_report:view";
 
     @Autowired
     private MockMvc mockMvc;
@@ -57,38 +52,12 @@ class ProductControllerTest {
     private ProductService productService;
 
     @Test
-    void getAllProducts_withViewScope_returns200AndPagedResult() throws Exception {
-        given(productService.getAllProducts(any(Pageable.class), any()))
-                .willReturn(new PageImpl<>(List.of(buildResponse(UUID.randomUUID(), "LAP-001"))));
+    void getAllProducts_withViewScope_returns200AndList() throws Exception {
+        given(productService.getAllProducts()).willReturn(List.of(buildResponse(UUID.randomUUID(), "LAP-001")));
 
         mockMvc.perform(get("/api/products").with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].sku").value("LAP-001"));
-    }
-
-    @Test
-    void getAllProducts_withFilters_passesThemToService() throws Exception {
-        given(productService.getAllProducts(any(Pageable.class), any()))
-                .willReturn(new PageImpl<>(List.of(buildResponse(UUID.randomUUID(), "LAP-001"))));
-
-        mockMvc.perform(get("/api/products")
-                        .param("page", "0")
-                        .param("size", "5")
-                        .param("category", "Electronica")
-                        .param("status", "ACTIVE")
-                        .param("minPrice", "10.00")
-                        .param("maxPrice", "1000.00")
-                        .param("q", "laptop")
-                        .with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    void getAllProducts_withInvalidStatus_returns400() throws Exception {
-        mockMvc.perform(get("/api/products")
-                        .param("status", "NO_EXISTE")
-                        .with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
-                .andExpect(status().isBadRequest());
+                .andExpect(jsonPath("$[0].sku").value("LAP-001"));
     }
 
     @Test
@@ -100,84 +69,6 @@ class ProductControllerTest {
     @Test
     void getAllProducts_withoutViewScope_returns403() throws Exception {
         mockMvc.perform(get("/api/products").with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void searchProducts_withViewScope_returns200AndResults() throws Exception {
-        given(productService.searchProducts(eq("laptop"), any(Pageable.class)))
-                .willReturn(new PageImpl<>(List.of(buildResponse(UUID.randomUUID(), "LAP-001"))));
-
-        mockMvc.perform(get("/api/products/search").param("q", "laptop")
-                        .with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].sku").value("LAP-001"));
-    }
-
-    @Test
-    void searchProducts_withoutToken_returns401() throws Exception {
-        mockMvc.perform(get("/api/products/search").param("q", "laptop"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void searchProducts_withoutViewScope_returns403() throws Exception {
-        mockMvc.perform(get("/api/products/search").param("q", "laptop")
-                        .with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void getCriticalProducts_withViewScope_returns200() throws Exception {
-        given(productService.getProductsBelowMinStock())
-                .willReturn(List.of(buildResponse(UUID.randomUUID(), "LOW-001")));
-
-        mockMvc.perform(get("/api/products/critical").with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].sku").value("LOW-001"));
-    }
-
-    @Test
-    void getCriticalProducts_withManageScope_returns200() throws Exception {
-        given(productService.getProductsBelowMinStock())
-                .willReturn(List.of(buildResponse(UUID.randomUUID(), "LOW-001")));
-
-        mockMvc.perform(get("/api/products/critical").with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    void getCriticalProducts_withoutToken_returns401() throws Exception {
-        mockMvc.perform(get("/api/products/critical"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void getCriticalProducts_withUnrelatedScope_returns403() throws Exception {
-        mockMvc.perform(get("/api/products/critical").with(jwt().authorities(new SimpleGrantedAuthority(REPORT_VIEW_SCOPE))))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void getProductStats_withReportViewScope_returns200() throws Exception {
-        given(productService.getProductStats())
-                .willReturn(new ProductStatsDTO(10, 8, 2, 3, new BigDecimal("1500.00")));
-
-        mockMvc.perform(get("/api/products/stats").with(jwt().authorities(new SimpleGrantedAuthority(REPORT_VIEW_SCOPE))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalProducts").value(10))
-                .andExpect(jsonPath("$.belowMinStockProducts").value(3));
-    }
-
-    @Test
-    void getProductStats_withoutToken_returns401() throws Exception {
-        mockMvc.perform(get("/api/products/stats"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void getProductStats_withProductViewScope_returns403() throws Exception {
-        mockMvc.perform(get("/api/products/stats").with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
                 .andExpect(status().isForbidden());
     }
 
@@ -298,7 +189,6 @@ class ProductControllerTest {
 
     private ProductResponseDTO buildResponse(UUID id, String sku) {
         return new ProductResponseDTO(id, "Laptop", sku, "Laptop 15 pulgadas", "Electronica",
-                new BigDecimal("999.99"), 10, 2, ProductStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now(),
-                "admin", 0L);
+                new BigDecimal("999.99"), 10, 2, ProductStatus.ACTIVE, LocalDateTime.now(), LocalDateTime.now());
     }
 }

@@ -2,7 +2,7 @@ import { Route, Routes } from 'react-router-dom';
 import AppShell from '../components/layout/AppShell';
 import ProtectedRoute from '../components/ProtectedRoute';
 import DashboardPage from '../pages/DashboardPage';
-import LoginPage from '../pages/LoginPage';
+import HomePage from '../pages/HomePage';
 import NotFoundPage from '../pages/NotFoundPage';
 import ProductDetailPage from '../pages/ProductDetailPage';
 import ProductFormPage from '../pages/ProductFormPage';
@@ -12,7 +12,7 @@ import StockPage from '../pages/StockPage';
 export default function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<LoginPage />} />
+      <Route path="/" element={<HomePage />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path="/dashboard" element={<DashboardPage />} />

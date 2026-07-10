@@ -54,12 +54,7 @@ export function AuthProvider({ children }) {
   const login = () => keycloak.login();
   const logout = () => keycloak.logout({ redirectUri: window.location.origin });
 
-  const hasScope = (scope) => {
-    const roles = user?.resource_access?.['inventario-backend']?.roles;
-    return Array.isArray(roles) && roles.includes(scope);
-  };
-
-  const value = { isAuthenticated, isLoading, user, token, login, logout, hasScope };
+  const value = { isAuthenticated, isLoading, user, token, login, logout };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

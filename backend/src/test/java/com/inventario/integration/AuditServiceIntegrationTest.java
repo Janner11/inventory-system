@@ -9,15 +9,11 @@ import com.inventario.repository.ProductRepository;
 import com.inventario.service.AuditService;
 import jakarta.persistence.EntityManager;
 import org.hibernate.envers.RevisionType;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.transaction.TestTransaction;
@@ -26,7 +22,6 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -58,15 +53,8 @@ class AuditServiceIntegrationTest {
     @Autowired
     private AuditService auditService;
 
-    @AfterEach
-    void clearSecurityContext() {
-        SecurityContextHolder.clearContext();
-    }
-
     @Test
-    void getProductRevisions_afterCreateAndUpdate_returnsRevisionsInOrderWithAuthor() {
-        SecurityContextHolder.getContext().setAuthentication(jwtAuthentication("admin@test.com"));
-
+    void getProductRevisions_afterCreateAndUpdate_returnsRevisionsInOrder() {
         Product product = new Product();
         product.setName("Laptop");
         product.setSku("AUD-REV-001");
@@ -85,7 +73,6 @@ class AuditServiceIntegrationTest {
         TestTransaction.end();
 
         TestTransaction.start();
-        SecurityContextHolder.getContext().setAuthentication(jwtAuthentication("manager@test.com"));
         Product toUpdate = productRepository.findById(id).orElseThrow();
         toUpdate.setQuantity(8);
         productRepository.saveAndFlush(toUpdate);
@@ -104,24 +91,11 @@ class AuditServiceIntegrationTest {
         assertThat(addRevision.quantity()).isEqualTo(10);
         assertThat(addRevision.sku()).isEqualTo("AUD-REV-001");
         assertThat(addRevision.revisionTimestamp()).isNotNull();
-        assertThat(addRevision.revisedBy()).isEqualTo("admin@test.com");
 
         ProductRevisionDTO modRevision = revisions.get(1);
         assertThat(modRevision.revisionType()).isEqualTo(RevisionType.MOD);
         assertThat(modRevision.quantity()).isEqualTo(8);
         assertThat(modRevision.revisionNumber()).isGreaterThan(addRevision.revisionNumber());
-        assertThat(modRevision.revisedBy()).isEqualTo("manager@test.com");
-    }
-
-    private JwtAuthenticationToken jwtAuthentication(String preferredUsername) {
-        Jwt jwt = Jwt.withTokenValue("token")
-                .header("alg", "RS256")
-                .subject("test-user")
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(3600))
-                .claim("preferred_username", preferredUsername)
-                .build();
-        return new JwtAuthenticationToken(jwt, List.of());
     }
 
     @Test

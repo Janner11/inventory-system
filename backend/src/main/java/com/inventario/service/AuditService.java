@@ -1,12 +1,12 @@
 package com.inventario.service;
 
-import com.inventario.audit.AuditRevisionEntity;
 import com.inventario.dto.ProductRevisionDTO;
 import com.inventario.entity.Product;
 import com.inventario.exception.ProductNotFoundException;
 import jakarta.persistence.EntityManager;
 import org.hibernate.envers.AuditReader;
 import org.hibernate.envers.AuditReaderFactory;
+import org.hibernate.envers.DefaultRevisionEntity;
 import org.hibernate.envers.RevisionType;
 import org.hibernate.envers.query.AuditEntity;
 import org.springframework.stereotype.Service;
@@ -49,7 +49,7 @@ public class AuditService {
 
     private ProductRevisionDTO toRevisionDTO(Object[] revision) {
         Product product = (Product) revision[0];
-        AuditRevisionEntity revisionEntity = (AuditRevisionEntity) revision[1];
+        DefaultRevisionEntity revisionEntity = (DefaultRevisionEntity) revision[1];
         RevisionType revisionType = (RevisionType) revision[2];
 
         LocalDateTime revisionTimestamp = LocalDateTime.ofInstant(
@@ -59,7 +59,6 @@ public class AuditService {
                 revisionEntity.getId(),
                 revisionTimestamp,
                 revisionType,
-                revisionEntity.getUsername(),
                 product.getId(),
                 product.getName(),
                 product.getSku(),

@@ -11,7 +11,6 @@ public record ProductRevisionDTO(
         int revisionNumber,
         LocalDateTime revisionTimestamp,
         RevisionType revisionType,
-        String revisedBy,
         UUID id,
         String name,
         String sku,

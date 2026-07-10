@@ -31,8 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({SecurityConfig.class, JwtAuthConverter.class})
 class AuditControllerTest {
 
-    private static final String VIEW_SCOPE = "SCOPE_audit:view";
-    private static final String INSUFFICIENT_SCOPE = "SCOPE_product:view";
+    private static final String VIEW_SCOPE = "SCOPE_product:view";
+    private static final String MANAGE_SCOPE = "SCOPE_product:manage";
 
     @Autowired
     private MockMvc mockMvc;
@@ -44,8 +44,8 @@ class AuditControllerTest {
     void getProductRevisions_withViewScope_returns200() throws Exception {
         UUID id = UUID.randomUUID();
         given(auditService.getProductRevisions(id)).willReturn(List.of(
-                buildRevision(id, 1, RevisionType.ADD, 10, "admin@test.com"),
-                buildRevision(id, 2, RevisionType.MOD, 8, "manager@test.com")
+                buildRevision(id, 1, RevisionType.ADD, 10),
+                buildRevision(id, 2, RevisionType.MOD, 8)
         ));
 
         mockMvc.perform(get("/api/audit/products/{id}/revisions", id)
@@ -53,10 +53,8 @@ class AuditControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].revisionType").value("ADD"))
                 .andExpect(jsonPath("$[0].quantity").value(10))
-                .andExpect(jsonPath("$[0].revisedBy").value("admin@test.com"))
                 .andExpect(jsonPath("$[1].revisionType").value("MOD"))
-                .andExpect(jsonPath("$[1].quantity").value(8))
-                .andExpect(jsonPath("$[1].revisedBy").value("manager@test.com"));
+                .andExpect(jsonPath("$[1].quantity").value(8));
     }
 
     @Test
@@ -72,7 +70,7 @@ class AuditControllerTest {
         UUID id = UUID.randomUUID();
 
         mockMvc.perform(get("/api/audit/products/{id}/revisions", id)
-                        .with(jwt().authorities(new SimpleGrantedAuthority(INSUFFICIENT_SCOPE))))
+                        .with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
                 .andExpect(status().isForbidden());
     }
 
@@ -86,12 +84,11 @@ class AuditControllerTest {
                 .andExpect(status().isNotFound());
     }
 
-    private ProductRevisionDTO buildRevision(UUID id, int revisionNumber, RevisionType type, int quantity, String revisedBy) {
+    private ProductRevisionDTO buildRevision(UUID id, int revisionNumber, RevisionType type, int quantity) {
         return new ProductRevisionDTO(
                 revisionNumber,
                 LocalDateTime.now(),
                 type,
-                revisedBy,
                 id,
                 "Laptop",
                 "LAP-001",

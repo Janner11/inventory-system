@@ -1,12 +1,7 @@
 import api from './axiosConfig';
 
-export async function getProducts(params = {}) {
-  const { data } = await api.get('/products', { params });
-  return data;
-}
-
-export async function getCriticalProducts() {
-  const { data } = await api.get('/products/critical');
+export async function getProducts() {
+  const { data } = await api.get('/products');
   return data;
 }
 

@@ -15,15 +15,13 @@ import com.inventario.repository.ProductRepository;
 import com.inventario.repository.StockMovementRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
 @Service
-@Transactional(readOnly = true)
+@Transactional
 public class StockService {
 
     private static final Logger log = LoggerFactory.getLogger(StockService.class);
@@ -40,7 +38,6 @@ public class StockService {
         this.stockMovementMapper = stockMovementMapper;
     }
 
-    @Transactional
     public StockMovementResponseDTO registerEntry(StockMovementRequestDTO request) {
         Product product = findActiveProductOrThrow(request.productId());
 
@@ -52,12 +49,11 @@ public class StockService {
         StockMovement movement = buildMovement(product, MovementType.ENTRY, previousQuantity, newQuantity,
                 request.quantity(), request.reason(), request.observations(), request.performedBy());
 
-        checkAndAlertLowStock(product);
+        checkLowStockAlert(product);
 
         return stockMovementMapper.toResponseDTO(stockMovementRepository.save(movement));
     }
 
-    @Transactional
     public StockMovementResponseDTO registerExit(StockMovementRequestDTO request) {
         Product product = findActiveProductOrThrow(request.productId());
 
@@ -73,46 +69,25 @@ public class StockService {
         StockMovement movement = buildMovement(product, MovementType.EXIT, previousQuantity, newQuantity,
                 -request.quantity(), request.reason(), request.observations(), request.performedBy());
 
-        checkAndAlertLowStock(product);
+        checkLowStockAlert(product);
 
         return stockMovementMapper.toResponseDTO(stockMovementRepository.save(movement));
     }
 
-    @Transactional
     public StockMovementResponseDTO adjustStock(StockAdjustmentRequestDTO request) {
         Product product = findActiveProductOrThrow(request.productId());
 
         int previousQuantity = product.getQuantity();
         int newQuantity = request.newQuantity();
-        if (newQuantity == previousQuantity) {
-            throw new IllegalArgumentException(
-                    "El ajuste no genera ningun cambio: el producto ya tiene " + newQuantity + " unidades");
-        }
         product.setQuantity(newQuantity);
         productRepository.save(product);
 
         StockMovement movement = buildMovement(product, MovementType.ADJUSTMENT, previousQuantity, newQuantity,
                 newQuantity - previousQuantity, request.reason(), request.observations(), request.performedBy());
 
-        checkAndAlertLowStock(product);
+        checkLowStockAlert(product);
 
         return stockMovementMapper.toResponseDTO(stockMovementRepository.save(movement));
-    }
-
-    /** Historial de movimientos de un producto, mas recientes primero. */
-    public Page<StockMovementResponseDTO> getMovementsByProduct(UUID productId, Pageable pageable) {
-        if (!productRepository.existsById(productId)) {
-            throw new ProductNotFoundException(productId);
-        }
-
-        return stockMovementRepository.findByProductId(productId, pageable)
-                .map(stockMovementMapper::toResponseDTO);
-    }
-
-    /** Historial global de movimientos (todos los productos), mas recientes primero. */
-    public Page<StockMovementResponseDTO> getRecentMovements(Pageable pageable) {
-        return stockMovementRepository.findAllByOrderByCreatedAtDesc(pageable)
-                .map(stockMovementMapper::toResponseDTO);
     }
 
     private Product findActiveProductOrThrow(UUID productId) {
@@ -140,8 +115,8 @@ public class StockService {
         return movement;
     }
 
-    private void checkAndAlertLowStock(Product product) {
-        if (product.getQuantity() <= product.getMinStock()) {
+    private void checkLowStockAlert(Product product) {
+        if (product.getQuantity() < product.getMinStock()) {
             log.warn("Alerta de stock bajo: producto {} ({}) quedo con {} unidades, minimo {}",
                     product.getSku(), product.getName(), product.getQuantity(), product.getMinStock());
         }
