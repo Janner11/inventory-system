@@ -190,6 +190,39 @@ curl -H "Authorization: Bearer <ACCESS_TOKEN>" \
    docker compose -f docker-compose.dev.yml down -v
    ```
 
+### Integration Testing — Testcontainers (TEST-002)
+
+`backend/src/test/java/com/inventario/integration/` contiene **37 tests de
+integración**, cada uno contra una base de datos PostgreSQL real levantada
+vía Testcontainers (no H2 ni mocks de repositorio):
+
+| Clase | Tests | Qué prueba |
+|---|---|---|
+| `ProductRepositoryIntegrationTest` | 14 | Queries de `ProductRepository` (paginación, filtros, unicidad de SKU, auditoría `createdAt`/`updatedAt`/`version`) contra Postgres real |
+| `StockMovementRepositoryIntegrationTest` | 8 | Queries de `StockMovementRepository` (historial paginado, top productos movidos) |
+| `SecurityIntegrationTest` | 7 | Flujo OAuth2 completo contra un **Keycloak real** (Testcontainers) — password grant real, validación de firma JWT vía JWKS real, extracción de scopes por `JwtAuthConverter`. Único test del proyecto que no mockea `JwtDecoder` |
+| `FlywayMigrationTest` | 3 | Las migraciones `V1`-`V7` se aplican en orden y sin errores sobre una base vacía |
+| `AuditServiceIntegrationTest` | 3 | `AuditService.getProductRevisions()` contra revisiones reales de Hibernate Envers |
+| `ProductAuditIntegrationTest` | 2 | Tablas `products_aud`/`revinfo` se pueblan correctamente al crear/editar un producto |
+
+`SecurityIntegrationTest` es el único que también levanta un contenedor de
+Keycloak 24 (`keycloak/realm.json`, la misma fuente de verdad que usa
+`docker-compose.dev.yml` — copiada al classpath de test automáticamente por
+Gradle, sin duplicarla a mano). El resto de tests de integración usan
+`@MockBean JwtDecoder` o no pasan por la capa de seguridad.
+
+> **Nota (Windows/Docker Desktop):** el `KeycloakContainer` usa
+> `waitingFor(KeycloakContainer.LOG_WAIT_STRATEGY)` en vez del
+> `HttpWaitStrategy` por defecto — en este entorno el wait HTTP contra
+> `/health/started` falla intermitentemente con `SocketException: Unexpected
+> end of file from server` pese a que el contenedor arranca correctamente
+> (problema conocido de proxy de puertos de Docker Desktop, no del
+> contenedor). Esperar por el log de arranque es más confiable aquí.
+
+```bash
+cd backend && ./gradlew test --tests "com.inventario.integration.*"
+```
+
 ### API Testing — RestAssured (TEST-003)
 
 `backend/src/test/java/com/inventario/api/ProductApiTest.java` contiene

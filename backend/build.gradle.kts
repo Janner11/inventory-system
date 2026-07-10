@@ -50,6 +50,9 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
+    // TEST-002: Keycloak real en tests de integracion (SecurityIntegrationTest), en vez
+    // de mockear JwtDecoder como hacen los tests unitarios/api.
+    testImplementation("com.github.dasniko:testcontainers-keycloak:3.5.1")
     testCompileOnly("org.projectlombok:lombok")
     testAnnotationProcessor("org.projectlombok:lombok")
     testImplementation("io.rest-assured:rest-assured")
@@ -74,4 +77,17 @@ tasks.jacocoTestReport {
         xml.required.set(true)
         html.required.set(true)
     }
+}
+
+// TEST-002: copia keycloak/realm.json (fuente unica de verdad, ADR-008, ya usado por
+// docker-compose.dev.yml) al classpath de test en vez de duplicarlo a mano en
+// src/test/resources - asi SecurityIntegrationTest nunca puede quedar desincronizada
+// del realm real.
+val copyKeycloakRealmForTests by tasks.registering(Copy::class) {
+    from(rootProject.projectDir.parentFile.resolve("keycloak/realm.json"))
+    into(layout.buildDirectory.dir("resources/test/keycloak"))
+}
+
+tasks.processTestResources {
+    dependsOn(copyKeycloakRealmForTests)
 }
