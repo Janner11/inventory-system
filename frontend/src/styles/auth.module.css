@@ -1,0 +1,53 @@
+.page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--spacing-lg);
+  background-color: var(--color-bg);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  width: 100%;
+  max-width: 420px;
+  background-color: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  text-align: center;
+}
+
+.card h1 {
+  margin: 0;
+  font-size: 1.375rem;
+  color: var(--color-primary);
+}
+
+.card p {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.loginButton {
+  align-self: stretch;
+}
+
+.loginButton:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Mobile */
+@media (max-width: 767px) {
+  .page {
+    padding: var(--spacing-md);
+  }
+
+  .card {
+    max-width: 100%;
+    padding: var(--spacing-md);
+  }
+}
