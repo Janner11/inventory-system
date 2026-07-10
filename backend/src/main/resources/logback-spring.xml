@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!--
+      OBS-001: traceId/spanId vienen del MDC que el OpenTelemetry Java Agent puebla
+      automaticamente (instrumentacion logback-mdc) con las claves trace_id/span_id
+      (snake_case, convencion semantica de OTel) — no traceId/spanId como sugeria el
+      ejemplo original de la seccion 10 de CLAUDE.md, ver "Detalle de OBS-001".
+      Quedan vacios en logs que no ocurren dentro de un span activo (ej. arranque).
+    -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{ISO8601} [%thread] %-5level [traceId=%X{trace_id}] [spanId=%X{span_id}] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
