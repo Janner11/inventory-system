@@ -24,9 +24,10 @@ infraestructura necesaria para el desarrollo local con un solo comando:
 - **PostgreSQL 16** — base de datos de la aplicación y de Keycloak
 - **Keycloak 24** — Identity & Access Management (IAM)
 - **Backend** — API REST Spring Boot (build local desde `backend/Dockerfile`)
-- **Prometheus** — recolección de métricas: scrapea al backend (`/actuator/prometheus`)
-  y al propio Alloy (self-monitoring del pipeline), además de exponer el receptor
-  `remote_write` que usa Alloy para reenviar las métricas OTLP
+- **Prometheus** — recolección de métricas: scrapea al backend (`/actuator/prometheus`),
+  al propio Alloy (self-monitoring del pipeline) y a cAdvisor (métricas por contenedor),
+  además de exponer el receptor `remote_write` que usa Alloy para reenviar las métricas OTLP
+- **cAdvisor** — métricas de CPU/RAM/red por contenedor (dashboard "Infraestructura", OBS-004)
 - **Alertmanager** — enrutamiento de alertas de Prometheus (reglas: OBS-005, pendiente)
 - **Loki** — almacenamiento de logs estructurados, con retención de 7 días y
   límites de ingesta configurados (OBS-003, ver
@@ -82,6 +83,7 @@ sus datos en volúmenes de Docker (`postgres_data`, `keycloak_data`, `prometheus
    | Backend (Actuator) | http://localhost:8081/actuator/health | — |
    | Keycloak | http://localhost:8080 | `admin` / `admin` (consola admin) |
    | Prometheus | http://localhost:9090 | — |
+   | cAdvisor | http://localhost:8085 | — |
    | Alertmanager | http://localhost:9093 | — |
    | Loki | http://localhost:3100/ready | — (se consulta desde Grafana Explore) |
    | Tempo | http://localhost:3200/status | — (se consulta desde Grafana Explore) |
@@ -314,35 +316,47 @@ y aplica búsqueda, filtros y paginación **del lado del cliente**:
 > controles deberían migrar a parámetros de query (`?q=&category=&page=&size=`)
 > resueltos por el backend — ver "Próximos pasos sugeridos".
 
-### Observabilidad (OBS-004 — dashboard de Aplicación)
+### Observabilidad (OBS-004 — 4 dashboards de Grafana)
 
-Con el stack levantado (`docker compose -f docker-compose.dev.yml up -d`), el
-backend expone métricas en `/actuator/prometheus` (Micrometer), Prometheus
-(`http://localhost:9090`) las scrapea cada 15s (job `inventario-backend`), y
+Con el stack levantado (`docker compose -f docker-compose.dev.yml up -d`),
 Grafana (`http://localhost:3000`, `admin`/`admin`) trae **provisionados
-automáticamente** el datasource de Prometheus y el dashboard de **Aplicación**,
-**"Inventario Backend"** (`observability/grafana/provisioning/dashboards/inventario-backend.json`),
-con los siguientes paneles:
+automáticamente** los 4 dashboards que define la sección 10 del backlog
+(`observability/grafana/provisioning/dashboards/`), todos con `refresh: 10s`
+y sin configuración manual (provider `inventario`, `dashboards.yml`):
 
-- **Backend Up**: estado del target Prometheus (`up{job="inventario-backend"}`).
-- **HTTP Request Rate (req/s)**: tasa de requests por endpoint/método.
-- **HTTP Error Rate (%)**: porcentaje de respuestas `4xx`/`5xx`.
-- **HTTP Latency p95**: percentil 95 de latencia por endpoint (requiere
+- **Aplicación** (`inventario-backend`, "Inventario Backend"): el backend
+  expone métricas en `/actuator/prometheus` (Micrometer), scrapeadas cada
+  15s (job `inventario-backend`). Paneles: **Backend Up**, **HTTP Request
+  Rate**, **HTTP Error Rate**, **HTTP Latency p95** (requiere
   `management.metrics.distribution.percentiles-histogram.http.server.requests=true`,
-  ya configurado en `application.yml`).
-- **JVM Heap Used**: uso de heap vs. máximo configurado.
-- **JVM Live Threads**: hilos vivos de la JVM.
-- **HikariCP Connections**: conexiones activas/pendientes/idle del pool de BD.
+  ya en `application.yml`), **JVM Heap Used**, **JVM Live Threads**,
+  **HikariCP Connections**.
+- **Infraestructura** (`inventario-infra`): métricas de CPU/RAM/red/disco
+  **por contenedor**, vía [cAdvisor](https://github.com/google/cadvisor)
+  (`gcr.io/cadvisor/cadvisor:v0.47.2`, job `cadvisor` en Prometheus).
+  Paneles: **Contenedores activos**, **CPU por contenedor**, **Memoria por
+  contenedor**, **Red recibida/enviada por contenedor**, **Disco usado por
+  contenedor** — uno por cada uno de los 10 servicios del stack.
+- **Negocio** (`inventario-business`): métricas custom de Micrometer
+  expuestas por `config/BusinessMetricsConfig.java` junto con las técnicas
+  en `/actuator/prometheus` (sin endpoint nuevo): `products` (por status),
+  `products_critical` (bajo stock mínimo), `inventory_value` (precio ×
+  cantidad del inventario activo) y `stock_movements` (histórico, por
+  tipo ENTRY/EXIT/ADJUSTMENT). Paneles: **Productos activos**, **Productos
+  en alerta**, **Valor total del inventario**, **Movimientos de stock por
+  tipo**, **Tasa de movimientos por minuto**, **Productos por status**.
+- **Seguridad** (`inventario-security`): derivada de
+  `http_server_requests_seconds_count{status=~"401|403"}` (ya expuesta por
+  Micrometer, sin instrumentación nueva). Paneles: **Intentos fallidos
+  (401+403) última hora**, **Tasa de 401**, **Tasa de 403**, tabla de
+  **endpoints con más 401/403**.
 
-El dashboard se actualiza solo (`refresh: 10s`) y no requiere configuración
-manual: al iniciar Grafana, el provider `inventario` (`provisioning/dashboards/dashboards.yml`)
-carga el JSON automáticamente.
-
-> OBS-004 define 4 dashboards (Infraestructura, Aplicación, Negocio y
-> Seguridad); por ahora solo está implementado el de **Aplicación**, que es
-> suficiente para cumplir "Grafana configurado + Dashboard operativo" de este
-> avance. Los otros 3 quedan pendientes (requieren Node Exporter, métricas de
-> negocio y métricas de seguridad que el backend aún no expone).
+> Las 4 métricas de negocio son *gauges* recalculados contra la base de
+> datos en cada scrape de Prometheus (no *counters* incrementados en el
+> momento del evento) — Micrometer descarta automáticamente cualquier
+> sufijo `_total` en gauges (esa convención de Prometheus se reserva para
+> counters), por eso los nombres finales son `products`/`products_critical`/
+> `inventory_value`/`stock_movements` sin sufijo.
 
 ### Trazas distribuidas y logs correlacionados (OBS-001)
 
