@@ -22,10 +22,13 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -139,6 +142,40 @@ class StockMovementRepositoryIntegrationTest {
 
         assertThatThrownBy(() -> stockMovementRepository.saveAndFlush(movement))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void findTopMovedProductsSince_ordersByMovementCountDescending() {
+        Product mostMoved = buildProduct("TOP-001", "Producto mas movido");
+        productRepository.saveAndFlush(mostMoved);
+        Product lessMoved = buildProduct("TOP-002", "Producto menos movido");
+        productRepository.saveAndFlush(lessMoved);
+
+        saveMovement(mostMoved, MovementType.ENTRY, 0, 5, 5);
+        saveMovement(mostMoved, MovementType.EXIT, 5, 3, -2);
+        saveMovement(mostMoved, MovementType.ENTRY, 3, 8, 5);
+        saveMovement(lessMoved, MovementType.ENTRY, 0, 4, 4);
+
+        List<Object[]> topProducts = stockMovementRepository.findTopMovedProductsSince(
+                LocalDateTime.now().minusDays(30), PageRequest.of(0, 5));
+
+        assertThat(topProducts).hasSize(2);
+        assertThat(topProducts).extracting(row -> row[0], row -> row[1], row -> row[3])
+                .containsExactly(
+                        tuple(mostMoved.getId(), "TOP-001", 3L),
+                        tuple(lessMoved.getId(), "TOP-002", 1L));
+    }
+
+    @Test
+    void findTopMovedProductsSince_excludesMovementsOutsideTheWindow() {
+        Product product = buildProduct("TOP-003", "Producto reciente");
+        productRepository.saveAndFlush(product);
+        saveMovement(product, MovementType.ENTRY, 0, 5, 5);
+
+        List<Object[]> topProducts = stockMovementRepository.findTopMovedProductsSince(
+                LocalDateTime.now().plusDays(1), PageRequest.of(0, 5));
+
+        assertThat(topProducts).isEmpty();
     }
 
     private StockMovement saveMovement(Product product, MovementType type, int previousQuantity, int newQuantity,
