@@ -1,43 +1,19 @@
 import { expect, test } from '@playwright/test';
-
-async function loginAsAdmin(page) {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Iniciar sesión' }).click();
-  await page.waitForURL(/realms\/inventario/);
-  await page.fill('#username', 'admin@test.com');
-  await page.fill('#password', 'admin123');
-  await page.click('#kc-login');
-  await page.waitForURL('**/dashboard');
-}
-
-async function fillProductForm(page, { name, sku, description, category, price, quantity, minStock }) {
-  await page.fill('#name', name);
-  await page.fill('#sku', sku);
-  await page.fill('#description', description);
-  await page.fill('#category', category);
-  await page.fill('#price', String(price));
-  await page.fill('#quantity', String(quantity));
-  await page.fill('#minStock', String(minStock));
-}
-
-async function filterBySku(page, sku) {
-  await page.fill('#product-search', sku);
-  await expect(page.getByText(sku)).toBeVisible({ timeout: 10_000 });
-}
+import { loginAsAdmin } from '../fixtures/auth.js';
+import { ProductsPage } from '../pageObjects/ProductsPage.js';
 
 test.describe('CRUD de Producto automatizado', () => {
   let sku;
+  let productsPage;
 
   test.beforeEach(async ({ page }) => {
     sku = `E2E-${Date.now()}`;
+    productsPage = new ProductsPage(page);
     await loginAsAdmin(page);
   });
 
   test('crear producto muestra el nuevo producto en la lista', async ({ page }) => {
-    await page.goto('/products/new');
-    await expect(page.getByRole('heading', { name: 'Nuevo producto' })).toBeVisible();
-
-    await fillProductForm(page, {
+    await productsPage.createProduct({
       name: 'Producto E2E',
       sku,
       description: 'Creado por Playwright',
@@ -46,17 +22,13 @@ test.describe('CRUD de Producto automatizado', () => {
       quantity: 30,
       minStock: 5,
     });
-    await page.getByRole('button', { name: 'Guardar' }).click();
 
-    await page.waitForURL('**/products');
-    await filterBySku(page, sku);
-    await expect(page.getByText('Producto E2E')).toBeVisible();
+    await expect(productsPage.rowBySku(sku).getByText('Producto E2E', { exact: true })).toBeVisible();
+    await page.screenshot({ path: 'test-results/screenshots/products-create.png' });
   });
 
   test('editar producto actualiza los datos en la lista', async ({ page }) => {
-    // Crea el producto
-    await page.goto('/products/new');
-    await fillProductForm(page, {
+    await productsPage.createProduct({
       name: 'Producto E2E',
       sku,
       description: 'Creado por Playwright',
@@ -65,54 +37,34 @@ test.describe('CRUD de Producto automatizado', () => {
       quantity: 30,
       minStock: 5,
     });
-    await page.getByRole('button', { name: 'Guardar' }).click();
-    await page.waitForURL('**/products');
 
-    // Filtra para encontrar la fila del producto
-    await filterBySku(page, sku);
-    const row = page.getByRole('row').filter({ hasText: sku });
-    await row.getByRole('link', { name: 'Editar' }).click();
-    await page.waitForURL(/\/products\/.*\/edit/);
+    await productsPage.editProduct(sku, 'Producto E2E Actualizado');
 
-    await expect(page.getByRole('heading', { name: 'Editar producto' })).toBeVisible();
-    await expect(page.locator('#name')).not.toHaveValue('');
-
-    await page.fill('#name', 'Producto E2E Actualizado');
-    await page.getByRole('button', { name: 'Guardar' }).click();
-
-    await page.waitForURL('**/products');
-    await filterBySku(page, sku);
-    await expect(page.getByText('Producto E2E Actualizado')).toBeVisible();
+    await productsPage.filterBySku(sku);
+    await expect(productsPage.rowBySku(sku).getByText('Producto E2E Actualizado', { exact: true })).toBeVisible();
+    await page.screenshot({ path: 'test-results/screenshots/products-edit.png' });
   });
 
   test('eliminar producto lo quita de la lista', async ({ page }) => {
-    // Crea el producto
-    await page.goto('/products/new');
-    await fillProductForm(page, {
+    await productsPage.createProduct({
       name: 'Producto E2E Para Borrar',
       sku,
       description: 'Creado por Playwright',
       category: 'E2E',
-      price: 5.00,
+      price: 5.0,
       quantity: 10,
       minStock: 1,
     });
-    await page.getByRole('button', { name: 'Guardar' }).click();
-    await page.waitForURL('**/products');
-    await filterBySku(page, sku);
 
-    // Elimina el producto
-    page.once('dialog', (dialog) => dialog.accept());
-    const row = page.getByRole('row').filter({ hasText: sku });
-    await row.getByRole('button', { name: 'Eliminar' }).click();
+    await productsPage.deleteProduct(sku);
 
-    await expect(page.getByText(sku)).not.toBeVisible({ timeout: 10_000 });
+    await expect(productsPage.rowBySku(sku)).not.toBeVisible({ timeout: 10_000 });
+    await page.screenshot({ path: 'test-results/screenshots/products-delete.png' });
   });
 
   test('CRUD completo: crear, leer, editar y eliminar en un flujo', async ({ page }) => {
     // CREATE
-    await page.goto('/products/new');
-    await fillProductForm(page, {
+    await productsPage.createProduct({
       name: 'Producto Flujo CRUD',
       sku,
       description: 'Test CRUD completo',
@@ -121,28 +73,44 @@ test.describe('CRUD de Producto automatizado', () => {
       quantity: 20,
       minStock: 3,
     });
-    await page.getByRole('button', { name: 'Guardar' }).click();
-    await page.waitForURL('**/products');
 
-    // READ — filtra y verifica que aparece en la lista
-    await filterBySku(page, sku);
-    await expect(page.getByText('Producto Flujo CRUD')).toBeVisible();
+    // READ
+    await expect(productsPage.rowBySku(sku).getByText('Producto Flujo CRUD', { exact: true })).toBeVisible();
 
     // UPDATE
-    const row = page.getByRole('row').filter({ hasText: sku });
-    await row.getByRole('link', { name: 'Editar' }).click();
-    await page.waitForURL(/\/products\/.*\/edit/);
-    await expect(page.locator('#name')).not.toHaveValue('');
-    await page.fill('#name', 'Producto Flujo CRUD v2');
-    await page.getByRole('button', { name: 'Guardar' }).click();
-    await page.waitForURL('**/products');
-    await filterBySku(page, sku);
-    await expect(page.getByText('Producto Flujo CRUD v2')).toBeVisible();
+    await productsPage.editProduct(sku, 'Producto Flujo CRUD v2');
+    await productsPage.filterBySku(sku);
+    await expect(productsPage.rowBySku(sku).getByText('Producto Flujo CRUD v2', { exact: true })).toBeVisible();
 
     // DELETE
-    page.once('dialog', (dialog) => dialog.accept());
-    const updatedRow = page.getByRole('row').filter({ hasText: sku });
-    await updatedRow.getByRole('button', { name: 'Eliminar' }).click();
-    await expect(page.getByText(sku)).not.toBeVisible({ timeout: 10_000 });
+    await productsPage.deleteProduct(sku);
+    await expect(productsPage.rowBySku(sku)).not.toBeVisible({ timeout: 10_000 });
+  });
+
+  test('búsqueda y filtro por categoría acotan la lista de productos', async ({ page }) => {
+    await productsPage.createProduct({
+      name: 'Producto Filtrable',
+      sku,
+      description: 'Para probar filtros',
+      category: 'E2E-Filtros',
+      price: 10,
+      quantity: 5,
+      minStock: 1,
+    });
+
+    // El filtro de categoría por sí solo pagina de a 5 — con muchas corridas acumuladas de este
+    // spec puede haber más de 5 productos con categoría "E2E-Filtros" y el nuevo caer en la página 2.
+    // Se combina categoría + búsqueda por SKU único para acotar a exactamente 1 resultado, sin
+    // depender de la posición de paginación.
+    await productsPage.categorySelect.selectOption('E2E-Filtros');
+    await productsPage.filterBySku(sku);
+    await expect(productsPage.rowBySku(sku)).toBeVisible({ timeout: 10_000 });
+
+    // Categoría que no matchea el producto: la fila desaparece de la lista.
+    await productsPage.categorySelect.selectOption('E2E');
+    await expect(productsPage.rowBySku(sku)).not.toBeVisible({ timeout: 10_000 });
+
+    await productsPage.categorySelect.selectOption('');
+    await productsPage.filterBySku(sku);
   });
 });

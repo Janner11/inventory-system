@@ -85,6 +85,7 @@ describe('DashboardPage', () => {
       isLoading: false,
       user: authenticatedUser,
       logout: vi.fn(),
+      hasScope: () => true,
     });
 
     renderDashboard();
@@ -101,6 +102,7 @@ describe('DashboardPage', () => {
       isLoading: false,
       user: null,
       logout: vi.fn(),
+      hasScope: () => true,
     });
 
     renderDashboard();
@@ -116,6 +118,7 @@ describe('DashboardPage', () => {
       isLoading: false,
       user: authenticatedUser,
       logout,
+      hasScope: () => true,
     });
 
     renderDashboard();
@@ -131,6 +134,7 @@ describe('DashboardPage', () => {
       isLoading: false,
       user: authenticatedUser,
       logout: vi.fn(),
+      hasScope: () => true,
     });
 
     renderDashboard();
@@ -146,6 +150,7 @@ describe('DashboardPage', () => {
       isLoading: false,
       user: authenticatedUser,
       logout: vi.fn(),
+      hasScope: () => true,
     });
 
     renderDashboard();
@@ -161,6 +166,7 @@ describe('DashboardPage', () => {
       isLoading: false,
       user: authenticatedUser,
       logout: vi.fn(),
+      hasScope: () => true,
     });
 
     renderDashboard();
@@ -176,6 +182,7 @@ describe('DashboardPage', () => {
       isLoading: false,
       user: authenticatedUser,
       logout: vi.fn(),
+      hasScope: () => true,
     });
 
     renderDashboard();
@@ -191,6 +198,7 @@ describe('DashboardPage', () => {
       isLoading: false,
       user: authenticatedUser,
       logout: vi.fn(),
+      hasScope: () => true,
     });
 
     renderDashboard();
