@@ -188,7 +188,11 @@ class ProductRepositoryIntegrationTest {
 
         List<Product> active = productRepository.findByStatus(ProductStatus.ACTIVE);
 
-        assertThat(active).extracting(Product::getSku).containsExactly("KEY-003");
+        // contains (no containsExactly): desde TEST-007, V8__insert_seed_data.sql siembra 9
+        // productos ACTIVE mas via Flyway (que corre contra este mismo Testcontainers), asi
+        // que la tabla ya no esta vacia al llegar a este test.
+        assertThat(active).extracting(Product::getSku).contains("KEY-003");
+        assertThat(active).extracting(Product::getSku).doesNotContain("MON-004");
     }
 
     @Test
