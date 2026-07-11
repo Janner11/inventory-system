@@ -1,83 +1,23 @@
 package com.inventario.api;
 
-import com.inventario.config.JpaAuditingConfig;
-import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.context.annotation.Import;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.mockito.Mockito.when;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(JpaAuditingConfig.class)
-@Testcontainers
-class ProductApiTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("inventario_test")
-            .withUsername("test")
-            .withPassword("test");
-
-    @DynamicPropertySource
-    static void configureDataSource(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-    }
-
-    @LocalServerPort
-    private int port;
-
-    @MockBean
-    private JwtDecoder jwtDecoder;
-
-    private static final String ADMIN_TOKEN = "admin-token";
-    private static final String VIEWER_TOKEN = "viewer-token";
-    private static final String WAREHOUSE_TOKEN = "warehouse-token";
-    private static final String AUDITOR_TOKEN = "auditor-token";
-    private static final String PRODUCT_MANAGER_ONLY_TOKEN = "product-manager-only-token";
-
-    @BeforeEach
-    void setUp() {
-        RestAssured.baseURI = "http://localhost";
-        RestAssured.port = port;
-        RestAssured.basePath = "/api";
-
-        when(jwtDecoder.decode(ADMIN_TOKEN))
-                .thenReturn(buildJwt(ADMIN_TOKEN, List.of(
-                        "product:view", "product:manage", "stock:view", "stock:manage",
-                        "report:view", "user:manage", "audit:view")));
-        when(jwtDecoder.decode(VIEWER_TOKEN))
-                .thenReturn(buildJwt(VIEWER_TOKEN, List.of("product:view", "stock:view")));
-        when(jwtDecoder.decode(WAREHOUSE_TOKEN))
-                .thenReturn(buildJwt(WAREHOUSE_TOKEN, List.of("product:view", "stock:view", "stock:manage")));
-        when(jwtDecoder.decode(AUDITOR_TOKEN))
-                .thenReturn(buildJwt(AUDITOR_TOKEN, List.of("audit:view", "report:view")));
-        when(jwtDecoder.decode(PRODUCT_MANAGER_ONLY_TOKEN))
-                .thenReturn(buildJwt(PRODUCT_MANAGER_ONLY_TOKEN, List.of("product:view", "product:manage")));
-    }
+/**
+ * Tests de API (RestAssured) para {@code /api/products} y, dado que su historial de
+ * revisiones esta directamente ligado a Product, para {@code /api/audit/products/{id}/revisions}
+ * (TEST-003). Los tests de {@code /api/stock/**} viven en {@link StockApiTest}; los tests
+ * genericos de autenticacion/autorizacion (401/403/token expirado/headers) en {@link AuthApiTest}.
+ */
+class ProductApiTest extends AbstractApiTest {
 
     // ── Validación de permisos — 401 (sin token) ─────────────────────────────
 
@@ -94,15 +34,6 @@ class ProductApiTest {
                 .contentType(ContentType.JSON)
                 .body(buildProductRequest("SKU-NO-AUTH-" + shortId()))
                 .when().post("/products")
-                .then().statusCode(401);
-    }
-
-    @Test
-    void registerStockEntry_sinToken_devuelve401() {
-        given()
-                .contentType(ContentType.JSON)
-                .body(Map.of("productId", UUID.randomUUID(), "quantity", 5, "performedBy", "tester"))
-                .when().post("/stock/entry")
                 .then().statusCode(401);
     }
 
@@ -130,16 +61,15 @@ class ProductApiTest {
     }
 
     @Test
-    void registerStockEntry_conSoloViewScope_devuelve403() {
+    void getProductStats_conSoloProductViewScope_devuelve403() {
+        // /products/stats exige report:view, no product:view.
         given()
                 .header("Authorization", "Bearer " + VIEWER_TOKEN)
-                .contentType(ContentType.JSON)
-                .body(Map.of("productId", UUID.randomUUID(), "quantity", 5, "performedBy", "tester"))
-                .when().post("/stock/entry")
+                .when().get("/products/stats")
                 .then().statusCode(403);
     }
 
-    // ── Validación de errores — 400 / 404 ────────────────────────────────────
+    // ── Validación de errores — 400 / 404 / 409 ──────────────────────────────
 
     @Test
     void createProduct_conDatosInvalidos_devuelve400() {
@@ -152,10 +82,41 @@ class ProductApiTest {
     }
 
     @Test
+    void createProduct_conSkuDuplicado_devuelve409() {
+        String sku = "SKU-DUP-" + shortId();
+        createProduct(sku);
+
+        given()
+                .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                .contentType(ContentType.JSON)
+                .body(buildProductRequest(sku))
+                .when().post("/products")
+                .then().statusCode(409);
+    }
+
+    @Test
     void getProductById_idInexistente_devuelve404() {
         given()
                 .header("Authorization", "Bearer " + VIEWER_TOKEN)
                 .when().get("/products/{id}", UUID.randomUUID())
+                .then().statusCode(404);
+    }
+
+    @Test
+    void updateProduct_idInexistente_devuelve404() {
+        given()
+                .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                .contentType(ContentType.JSON)
+                .body(buildProductRequest("SKU-UPD-404-" + shortId()))
+                .when().put("/products/{id}", UUID.randomUUID())
+                .then().statusCode(404);
+    }
+
+    @Test
+    void deleteProduct_idInexistente_devuelve404() {
+        given()
+                .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                .when().delete("/products/{id}", UUID.randomUUID())
                 .then().statusCode(404);
     }
 
@@ -167,6 +128,80 @@ class ProductApiTest {
                 .header("Authorization", "Bearer " + VIEWER_TOKEN)
                 .when().get("/products")
                 .then().statusCode(200);
+    }
+
+    @Test
+    void getAllProducts_conPaginacion_devuelvePaginaConMetadatosCorrectos() {
+        String category = "PAG-" + shortId();
+        for (int i = 0; i < 3; i++) {
+            given()
+                    .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                    .contentType(ContentType.JSON)
+                    .body(Map.of(
+                            "name", "Producto paginado " + i, "sku", "SKU-PAG-" + shortId(),
+                            "category", category, "price", 5.00, "quantity", 1, "minStock", 1))
+                    .when().post("/products")
+                    .then().statusCode(201);
+        }
+
+        given()
+                .header("Authorization", "Bearer " + VIEWER_TOKEN)
+                .queryParam("category", category)
+                .queryParam("page", 0)
+                .queryParam("size", 2)
+                .when().get("/products")
+                .then()
+                .statusCode(200)
+                .body("content.size()", equalTo(2))
+                .body("totalElements", equalTo(3))
+                .body("totalPages", equalTo(2))
+                .body("number", equalTo(0))
+                .body("size", equalTo(2));
+    }
+
+    @Test
+    void searchProducts_conQueryCoincidente_devuelveElProducto() {
+        String sku = "SKU-SEARCH-" + shortId();
+        createProduct(sku);
+
+        given()
+                .header("Authorization", "Bearer " + VIEWER_TOKEN)
+                .queryParam("q", sku)
+                .when().get("/products/search")
+                .then()
+                .statusCode(200)
+                .body("totalElements", greaterThanOrEqualTo(1))
+                .body("content[0].sku", equalTo(sku));
+    }
+
+    @Test
+    void getCriticalProducts_devuelveProductosBajoStockMinimo() {
+        String sku = "SKU-CRIT-" + shortId();
+        given()
+                .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                .contentType(ContentType.JSON)
+                .body(Map.of(
+                        "name", "Producto critico", "sku", sku, "category", "Test",
+                        "price", 5.00, "quantity", 1, "minStock", 10))
+                .when().post("/products")
+                .then().statusCode(201);
+
+        given()
+                .header("Authorization", "Bearer " + VIEWER_TOKEN)
+                .when().get("/products/critical")
+                .then()
+                .statusCode(200)
+                .body("sku", org.hamcrest.Matchers.hasItem(sku));
+    }
+
+    @Test
+    void getProductStats_conReportViewScope_devuelve200() {
+        given()
+                .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                .when().get("/products/stats")
+                .then()
+                .statusCode(200)
+                .body("totalProducts", greaterThanOrEqualTo(0));
     }
 
     @Test
@@ -218,46 +253,6 @@ class ProductApiTest {
                 .then().statusCode(204);
     }
 
-    // ── Stock — scope dedicado stock:manage (SEC-002) ────────────────────────
-
-    @Test
-    void registerStockEntry_conSoloProductManageScope_devuelve403() {
-        // product:manage ya no basta para /stock/entry: el scope dedicado es stock:manage.
-        String productId = createProduct("SKU-STOCK-PROD-" + shortId());
-        given()
-                .header("Authorization", "Bearer " + PRODUCT_MANAGER_ONLY_TOKEN)
-                .contentType(ContentType.JSON)
-                .body(Map.of("productId", productId, "quantity", 5, "performedBy", "tester"))
-                .when().post("/stock/entry")
-                .then().statusCode(403);
-    }
-
-    @Test
-    void registerStockEntry_conStockManageScope_devuelve201() {
-        String productId = createProduct("SKU-STOCK-ENTRY-" + shortId());
-        given()
-                .header("Authorization", "Bearer " + WAREHOUSE_TOKEN)
-                .contentType(ContentType.JSON)
-                .body(Map.of("productId", productId, "quantity", 5, "performedBy", "tester"))
-                .when().post("/stock/entry")
-                .then()
-                .statusCode(201)
-                .body("newQuantity", equalTo(15));
-    }
-
-    @Test
-    void registerStockExit_conStockManageScope_devuelve201() {
-        String productId = createProduct("SKU-STOCK-EXIT-" + shortId());
-        given()
-                .header("Authorization", "Bearer " + WAREHOUSE_TOKEN)
-                .contentType(ContentType.JSON)
-                .body(Map.of("productId", productId, "quantity", 4, "performedBy", "tester"))
-                .when().post("/stock/exit")
-                .then()
-                .statusCode(201)
-                .body("newQuantity", equalTo(6));
-    }
-
     // ── Auditoria — scope dedicado audit:view (SEC-002) ──────────────────────
 
     @Test
@@ -285,43 +280,5 @@ class ProductApiTest {
                 .then()
                 .statusCode(200)
                 .body("[0].revisionType", equalTo("ADD"));
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private Jwt buildJwt(String tokenValue, List<String> roles) {
-        return Jwt.withTokenValue(tokenValue)
-                .header("alg", "RS256")
-                .subject("test-user")
-                .issuedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(3600))
-                .claim("resource_access", Map.of("inventario-backend", Map.of("roles", roles)))
-                .build();
-    }
-
-    private String createProduct(String sku) {
-        return given()
-                .header("Authorization", "Bearer " + ADMIN_TOKEN)
-                .contentType(ContentType.JSON)
-                .body(buildProductRequest(sku))
-                .when().post("/products")
-                .then().statusCode(201)
-                .extract().path("id");
-    }
-
-    private Map<String, Object> buildProductRequest(String sku) {
-        return Map.of(
-                "name", "Producto de prueba",
-                "sku", sku,
-                "description", "Descripcion de prueba",
-                "category", "Test",
-                "price", 9.99,
-                "quantity", 10,
-                "minStock", 2
-        );
-    }
-
-    private String shortId() {
-        return UUID.randomUUID().toString().substring(0, 8).toUpperCase();
     }
 }

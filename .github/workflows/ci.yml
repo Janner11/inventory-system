@@ -75,9 +75,19 @@ jobs:
         working-directory: backend
         run: ./gradlew test --tests "com.inventario.integration.*" --tests "com.inventario.api.*"
 
-      - name: Upload test results
+      - name: Upload test results (XML)
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: integration-test-results
           path: backend/build/test-results/test/
+
+      # TEST-003: reporte HTML legible (RestAssured/JUnit) de ProductApiTest/StockApiTest/
+      # AuthApiTest/ContractTest, distinto del XML de arriba (pensado para CI) y del
+      # coverage HTML de JaCoCo (unit-tests job) - evidencia pedida explicitamente por el ticket.
+      - name: Upload test results (HTML report)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-test-html-report
+          path: backend/build/reports/tests/test/
