@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TEST-005: supresiones de OWASP Dependency-Check para falsos positivos verificados.
+
+  Cada <suppress> debe documentar por que el hallazgo es un falso positivo o un riesgo
+  aceptado (no borrar sin justificar) - mismo criterio que zap-ignore-rules.conf para ZAP.
+  Formato: https://dependency-check.github.io/DependencyCheck/general/suppression.html
+
+  Sin entradas todavia - se agregan solo cuando una corrida real del scan (./gradlew
+  dependencyCheckAnalyze) encuentra un falso positivo verificado manualmente.
+-->
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+</suppressions>

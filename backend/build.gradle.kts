@@ -3,6 +3,7 @@ plugins {
     jacoco
     id("org.springframework.boot") version "3.3.5"
     id("io.spring.dependency-management") version "1.1.6"
+    id("org.owasp.dependencycheck") version "12.2.2"
 }
 
 group = "com.inventario"
@@ -91,4 +92,40 @@ val copyKeycloakRealmForTests by tasks.registering(Copy::class) {
 
 tasks.processTestResources {
     dependsOn(copyKeycloakRealmForTests)
+}
+
+// TEST-005: OWASP Dependency-Check (seccion 11 de CLAUDE.md ya lo listaba, sin implementar).
+// El ticket describia "pom.xml" (Maven) - este proyecto usa Gradle (sin pom.xml, sin Maven
+// en ningun lado del repo), mismo criterio de adaptacion ya usado en el resto del backlog
+// (TEST-003 "maven-failsafe-plugin" -> tareas de Gradle equivalentes).
+dependencyCheck {
+    // "Dependency Check sin vulnerabilidades CRITICAL" (validaciones del ticket) - CRITICAL
+    // en la escala CVSSv3 del NVD es >= 9.0.
+    failBuildOnCVSS = 9.0f
+    formats = listOf("HTML", "XML", "JSON")
+    setOutputDirectory(layout.buildDirectory.dir("reports/dependency-check").get().asFile)
+    suppressionFiles = listOf(rootProject.projectDir.resolve("dependency-check-suppressions.xml").path)
+
+    // Ruta fija dentro de build/ (en vez del default en el home del usuario) para poder
+    // cachearla entre corridas de CI (actions/cache, ver security-scan.yml).
+    data.directory = layout.buildDirectory.dir("dependency-check-data").get().asFile.absolutePath
+
+    // Sin NVD_API_KEY las actualizaciones de la base de datos del NVD son extremadamente
+    // lentas (rate limit publico) - ver .env.example / seccion 15 de CLAUDE.md. Con la
+    // variable seteada, se usa; sin ella, dependency-check sigue funcionando (mas lento).
+    System.getenv("NVD_API_KEY")?.let { nvd.apiKey = it }
+
+    // Solo las dependencias que realmente terminan en el artefacto desplegado - las de
+    // solo-test (Testcontainers, RestAssured, JUnit, etc.) no representan riesgo en
+    // produccion y solo agregan ruido/tiempo de escaneo.
+    scanConfigurations = listOf("runtimeClasspath")
+
+    analyzers {
+        // Analizadores para ecosistemas que este proyecto no usa (Node/.NET/Python/Ruby) -
+        // deshabilitarlos evita falsos positivos y acelera el analisis.
+        assemblyEnabled = false
+        nodeEnabled = false
+        nuspecEnabled = false
+        nugetconfEnabled = false
+    }
 }

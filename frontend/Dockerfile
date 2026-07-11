@@ -6,9 +6,26 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+
 # VITE_API_BASE_URL y las variables VITE_KEYCLOAK_* se hornean en el bundle en
-# build-time (Vite). En staging/produccion se pasan como --build-arg / ARG si
-# difieren del .env usado en desarrollo (ver INFRA-004).
+# build-time (Vite lee import.meta.env.VITE_* solo durante "vite build", nunca en
+# runtime) — .dockerignore excluye ".env" del build context (correcto: no se debe
+# commitear ni copiar ese archivo), así que sin estos ARG/ENV la imagen se construía
+# SIN ninguna variable VITE_* seteada y keycloak-js fallaba en runtime con
+# "clientId missing" (pantalla en blanco) en cualquier despliegue real de esta
+# imagen (TEST-005, encontrado al correr un login real de Playwright contra el
+# contenedor — nunca antes verificado, CICD-004 solo probaba curl a "/"/"/healthz").
+# Los defaults matchean docker-compose.dev.yml/.env.example; para staging/producción
+# (INFRA-004) se sobreescriben con --build-arg cuando esos valores difieran.
+ARG VITE_API_BASE_URL=http://localhost:8081/api
+ARG VITE_KEYCLOAK_URL=http://localhost:8080
+ARG VITE_KEYCLOAK_REALM=inventario
+ARG VITE_KEYCLOAK_CLIENT_ID=inventario-frontend
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ENV VITE_KEYCLOAK_URL=$VITE_KEYCLOAK_URL
+ENV VITE_KEYCLOAK_REALM=$VITE_KEYCLOAK_REALM
+ENV VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID
+
 RUN npm run build
 
 # ===== Etapa 2: Runtime (Nginx sirviendo el build estatico) =====
