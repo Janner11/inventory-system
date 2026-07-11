@@ -1,0 +1,66 @@
+name: Performance Test
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+
+  k6-load-test:
+    name: k6 Load Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build backend
+        working-directory: backend
+        run: ./gradlew build -x test
+
+      # docker-compose.staging.yml (INFRA-004) todavia no existe (mismo gap ya documentado
+      # en TEST-004/TEST-005) - se usa docker-compose.dev.yml como la aproximacion mas
+      # cercana a "staging" disponible hoy en el repo.
+      - name: Start Postgres, Keycloak and backend (docker-compose.dev.yml)
+        run: docker compose -f docker-compose.dev.yml up -d postgres keycloak backend
+
+      - name: Wait for backend health
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8081/actuator/health | grep -q '"status":"UP"' && echo "backend UP" && exit 0
+            sleep 5
+          done
+          echo "backend did not become healthy in time"
+          docker compose -f docker-compose.dev.yml logs backend keycloak
+          exit 1
+
+      - name: Run k6 load test
+        run: |
+          mkdir -p tests/performance/results
+          docker run --network host --rm \
+            -v "$(pwd)/tests/performance:/scripts:rw" \
+            -e KEYCLOAK_URL=http://localhost:8080 \
+            -e BASE_URL=http://localhost:8081 \
+            grafana/k6 run \
+            --summary-export=/scripts/results/load-test-summary.json \
+            --out json=/scripts/results/load-test-results.json \
+            /scripts/load-test.js
+
+      - name: Dump backend/keycloak logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.dev.yml logs backend keycloak
+
+      - name: Upload k6 report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-load-test-report
+          path: tests/performance/results/
