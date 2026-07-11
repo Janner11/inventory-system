@@ -3,8 +3,11 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useAuth } from '../../src/hooks/useAuth';
 import ProductsPage from '../../src/pages/ProductsPage';
 import { getCriticalProducts, getProducts } from '../../src/services/productService';
+
+vi.mock('../../src/hooks/useAuth');
 
 vi.mock('../../src/services/productService', () => ({
   getProducts: vi.fn(),
@@ -47,6 +50,8 @@ function renderProductsPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+
+  useAuth.mockReturnValue({ hasScope: () => true });
 
   getProducts.mockImplementation(async ({ page = 0, size = 20, category, q } = {}) => {
     let filtered = ALL_PRODUCTS;

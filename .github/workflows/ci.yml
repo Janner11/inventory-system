@@ -91,3 +91,90 @@ jobs:
         with:
           name: api-test-html-report
           path: backend/build/reports/tests/test/
+
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # TEST-004: docker-compose.staging.yml (INFRA-004) todavia no existe, asi que el DoD
+      # "Pasan en CI contra staging" se aproxima con el stack de docker-compose.dev.yml
+      # (Postgres + Keycloak con el realm real importado + backend), lo mas cercano a un
+      # entorno real que hoy existe en el repo. No se levantan Grafana/Prometheus/Loki/Tempo/
+      # Alloy - no los necesita el frontend ni los E2E.
+      - name: Start Postgres, Keycloak and backend (docker-compose.dev.yml)
+        run: docker compose -f docker-compose.dev.yml up -d postgres keycloak backend
+
+      - name: Wait for backend health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8081/actuator/health | grep -q '"status":"UP"'; then
+              echo "backend UP"; exit 0
+            fi
+            sleep 5
+          done
+          echo "backend did not become healthy in time"
+          docker compose -f docker-compose.dev.yml logs backend keycloak
+          exit 1
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: Start frontend (Vite dev server)
+        working-directory: frontend
+        run: nohup npm run dev -- --port 5173 > vite.log 2>&1 &
+
+      - name: Wait for frontend
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5173/ > /dev/null; then
+              echo "frontend UP"; exit 0
+            fi
+            sleep 2
+          done
+          echo "frontend did not become available in time"
+          cat frontend/vite.log || true
+          exit 1
+
+      - name: Run Playwright E2E tests
+        working-directory: frontend
+        run: npx playwright test
+
+      - name: Upload Playwright HTML report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+
+      - name: Upload Playwright screenshots and videos
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-test-results
+          path: frontend/test-results/
+
+      - name: Upload Allure results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: allure-results
+          path: frontend/allure-results/
+
+      - name: Dump backend/keycloak logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.dev.yml logs backend keycloak

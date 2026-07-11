@@ -1,14 +1,5 @@
 import { expect, test } from '@playwright/test';
-
-async function loginAsAdmin(page) {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Iniciar sesión' }).click();
-  await page.waitForURL(/realms\/inventario/);
-  await page.fill('#username', 'admin@test.com');
-  await page.fill('#password', 'admin123');
-  await page.click('#kc-login');
-  await page.waitForURL('**/dashboard');
-}
+import { loginAsAdmin, logout } from '../fixtures/auth.js';
 
 test('login automatizado redirige a /dashboard', async ({ page }) => {
   await page.goto('/');
@@ -24,6 +15,8 @@ test('login automatizado redirige a /dashboard', async ({ page }) => {
   await page.waitForURL('**/dashboard');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await expect(page.getByText('Bienvenido')).toBeVisible();
+
+  await page.screenshot({ path: 'test-results/screenshots/auth-login-dashboard.png' });
 });
 
 test('post-login: navbar y sidebar visibles con datos del usuario', async ({ page }) => {
@@ -38,11 +31,18 @@ test('post-login: navbar y sidebar visibles con datos del usuario', async ({ pag
   await expect(sidebar.getByRole('link', { name: 'Productos' })).toBeVisible();
 });
 
-test('logout regresa a la pantalla de inicio', async ({ page }) => {
-  await loginAsAdmin(page);
-
-  await page.getByRole('button', { name: 'Cerrar sesión' }).click();
+test('redirección: ruta protegida sin sesión regresa a la pantalla de inicio', async ({ page }) => {
+  await page.goto('/products');
 
   await expect(page).toHaveURL('/');
   await expect(page.getByRole('button', { name: 'Iniciar sesión' })).toBeVisible();
+});
+
+test('logout regresa a la pantalla de inicio', async ({ page }) => {
+  await loginAsAdmin(page);
+
+  await logout(page);
+
+  await expect(page.getByRole('button', { name: 'Iniciar sesión' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/screenshots/auth-logout.png' });
 });

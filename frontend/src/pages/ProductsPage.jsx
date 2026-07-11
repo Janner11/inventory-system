@@ -3,12 +3,15 @@ import { Link } from 'react-router-dom';
 import Pagination from '../components/common/Pagination';
 import ProductFilters from '../components/products/ProductFilters';
 import ProductsTable from '../components/products/ProductsTable';
+import { useAuth } from '../hooks/useAuth';
 import { useCriticalProducts, useProductCategories, useProducts } from '../hooks/useProducts';
 import styles from '../styles/products.module.css';
 
 const PAGE_SIZE = 5;
 
 export default function ProductsPage() {
+  const { hasScope } = useAuth();
+  const canManage = hasScope('product:manage');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [lowStockOnly, setLowStockOnly] = useState(false);
@@ -63,9 +66,11 @@ export default function ProductsPage() {
     <div className={styles.productsPage}>
       <div className={styles.pageHeader}>
         <h1>Productos</h1>
-        <Link to="/products/new" className={styles.newProductButton}>
-          Nuevo producto
-        </Link>
+        {canManage && (
+          <Link to="/products/new" className={styles.newProductButton}>
+            Nuevo producto
+          </Link>
+        )}
       </div>
 
       {isLoading && <p>Cargando productos...</p>}
@@ -84,7 +89,7 @@ export default function ProductsPage() {
           />
 
           <div className={styles.tableWrapper}>
-            <ProductsTable products={products} />
+            <ProductsTable products={products} canManage={canManage} />
           </div>
 
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
