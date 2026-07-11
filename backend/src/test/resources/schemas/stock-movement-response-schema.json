@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StockMovementResponseDTO",
+  "type": "object",
+  "required": [
+    "id", "productId", "productSku", "type", "previousQuantity",
+    "newQuantity", "quantity", "performedBy", "createdAt"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "productId": { "type": "string" },
+    "productSku": { "type": "string" },
+    "productName": { "type": ["string", "null"] },
+    "type": { "type": "string", "enum": ["ENTRY", "EXIT", "ADJUSTMENT"] },
+    "previousQuantity": { "type": "integer" },
+    "newQuantity": { "type": "integer" },
+    "quantity": { "type": "integer" },
+    "reason": { "type": ["string", "null"] },
+    "observations": { "type": ["string", "null"] },
+    "performedBy": { "type": "string" },
+    "createdAt": { "type": "string" }
+  }
+}

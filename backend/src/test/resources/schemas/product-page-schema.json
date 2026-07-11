@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Page<ProductResponseDTO>",
+  "type": "object",
+  "required": ["content", "totalElements", "totalPages", "number", "size"],
+  "properties": {
+    "content": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "sku", "category", "price", "quantity", "minStock", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "sku": { "type": "string" },
+          "category": { "type": "string" },
+          "price": { "type": "number" },
+          "quantity": { "type": "integer" },
+          "minStock": { "type": "integer" },
+          "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] }
+        }
+      }
+    },
+    "totalElements": { "type": "integer" },
+    "totalPages": { "type": "integer" },
+    "number": { "type": "integer" },
+    "size": { "type": "integer" }
+  }
+}

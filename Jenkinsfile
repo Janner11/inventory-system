@@ -73,6 +73,17 @@ pipeline {
                 reportName           : 'Cobertura JaCoCo'
             ])
 
+            // TEST-003: reporte HTML de JUnit/RestAssured (ProductApiTest, StockApiTest,
+            // AuthApiTest, ContractTest incluidos) — evidencia pedida explicitamente por el ticket.
+            publishHTML(target: [
+                allowMissing         : true,
+                alwaysLinkToLastBuild: true,
+                keepAll              : true,
+                reportDir            : 'backend/build/reports/tests/test',
+                reportFiles          : 'index.html',
+                reportName           : 'Reporte de Tests (JUnit/RestAssured)'
+            ])
+
             archiveArtifacts artifacts: 'backend/build/libs/*.jar',
                              allowEmptyArchive: true
         }

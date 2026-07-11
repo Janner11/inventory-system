@@ -56,6 +56,7 @@ dependencies {
     testCompileOnly("org.projectlombok:lombok")
     testAnnotationProcessor("org.projectlombok:lombok")
     testImplementation("io.rest-assured:rest-assured")
+    testImplementation("io.rest-assured:json-schema-validator")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
