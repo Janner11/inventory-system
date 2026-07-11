@@ -156,11 +156,19 @@ class StockMovementRepositoryIntegrationTest {
         saveMovement(mostMoved, MovementType.ENTRY, 3, 8, 5);
         saveMovement(lessMoved, MovementType.ENTRY, 0, 4, 4);
 
+        // Page grande + filtro por SKU propio (en vez de PageRequest.of(0, 5) + hasSize(2)):
+        // desde TEST-007, V8__insert_seed_data.sql siembra otros productos con movimientos
+        // propios via Flyway (que corre contra este mismo Testcontainers), asi que ya no se
+        // puede asumir que TOP-001/TOP-002 sean los unicos ni que entren en el top 5 sin
+        // competencia.
         List<Object[]> topProducts = stockMovementRepository.findTopMovedProductsSince(
-                LocalDateTime.now().minusDays(30), PageRequest.of(0, 5));
+                LocalDateTime.now().minusDays(30), PageRequest.of(0, 50));
 
-        assertThat(topProducts).hasSize(2);
-        assertThat(topProducts).extracting(row -> row[0], row -> row[1], row -> row[3])
+        List<Object[]> propios = topProducts.stream()
+                .filter(row -> "TOP-001".equals(row[1]) || "TOP-002".equals(row[1]))
+                .toList();
+
+        assertThat(propios).extracting(row -> row[0], row -> row[1], row -> row[3])
                 .containsExactly(
                         tuple(mostMoved.getId(), "TOP-001", 3L),
                         tuple(lessMoved.getId(), "TOP-002", 1L));
