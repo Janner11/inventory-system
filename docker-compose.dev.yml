@@ -172,6 +172,29 @@ services:
     networks:
       - inventario-network
 
+  # OBS-005: receptor local de webhooks para el receiver "default" de Alertmanager.
+  # No hay ningun servicio real de notificaciones (Slack/email) en este stack de
+  # desarrollo; este contenedor es el target real y committeado que permite verificar
+  # "Alertmanager recibe alertas" sin depender de un servicio externo (webhook.site
+  # o similar), imagen base minima (sin dependencias) montando el script como volumen.
+  alert-webhook-receiver:
+    image: python:3.12-alpine
+    container_name: inventario-alert-webhook-receiver
+    restart: unless-stopped
+    command: ["python3", "/app/webhook-receiver.py"]
+    volumes:
+      - ./observability/alertmanager/webhook-receiver.py:/app/webhook-receiver.py:ro
+    ports:
+      - "${ALERT_WEBHOOK_PORT:-5001}:5001"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - inventario-network
+
   loki:
     # Pineado a 2.9.6 (no :latest): la serie 3.x mas reciente cambia el esquema de
     # storage/wal y ademas la imagen queda sin shell/wget, lo que impide un healthcheck

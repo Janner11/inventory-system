@@ -14,7 +14,7 @@ pieza. Para el detalle de decisiones y verificaciones de cada ticket, ver
 | **Loki** | Logs estructurados del backend, exportados por OTLP (OBS-001) | `observability/loki/loki-config.yml` | http://localhost:3100 |
 | **Tempo** | Trazas distribuidas del backend, exportadas por OTLP (OBS-001) | `observability/tempo/tempo-config.yml` | http://localhost:3200 |
 | **Grafana** | 4 dashboards (Aplicación/Infraestructura/Negocio/Seguridad, OBS-004) + Explore, datasources provisionados como código | `observability/grafana/provisioning/` | http://localhost:3000 (`admin`/`admin`) |
-| **Alertmanager** | Enrutamiento de alertas de Prometheus (reglas: OBS-005, pendiente) | `observability/alertmanager/alertmanager.yml` | http://localhost:9093 |
+| **Alertmanager** | Enrutamiento de las 5 alertas de Prometheus (CPU, error rate, latencia, servicio caído, fallos de auth — OBS-005) a un webhook local | `observability/alertmanager/alertmanager.yml` | http://localhost:9093 |
 
 ## Flujo de datos
 
@@ -56,3 +56,5 @@ métricas independientes que coexisten sin colisionar (mismo `job`, distinto
 
 - [`loki-queries.md`](./loki-queries.md) — consultas LogQL de referencia,
   esquema de los logs JSON y configuración de retención/límites (OBS-003).
+- [`alerts.md`](./alerts.md) — las 5 reglas de alerta de Prometheus, sus
+  umbrales y motivación, y la verificación real de disparo/entrega (OBS-005).
