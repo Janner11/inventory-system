@@ -1,5 +1,9 @@
 # Sistema de Gestión de Inventarios Empresarial
 
+[![CI](https://github.com/Janner11/inventory-system/actions/workflows/ci.yml/badge.svg)](https://github.com/Janner11/inventory-system/actions/workflows/ci.yml)
+[![Security Scan](https://github.com/Janner11/inventory-system/actions/workflows/security-scan.yml/badge.svg)](https://github.com/Janner11/inventory-system/actions/workflows/security-scan.yml)
+[![Performance Test](https://github.com/Janner11/inventory-system/actions/workflows/performance-test.yml/badge.svg)](https://github.com/Janner11/inventory-system/actions/workflows/performance-test.yml)
+
 Proyecto académico (PUCMM — Aseguramiento de Calidad de Software) para la gestión de
 inventarios de pequeñas empresas. Monorepo compuesto por un frontend en React (Vite) y
 un backend en Spring Boot 3 (Java 21), con autenticación vía Keycloak y observabilidad
