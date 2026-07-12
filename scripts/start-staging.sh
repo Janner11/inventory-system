@@ -20,6 +20,18 @@
 #     tiempo esperando el resto del stack.
 #   - Timeout en wait-for-it.sh: los timeouts son ajustables por variable de entorno
 #     (INFRA_TIMEOUT/APP_TIMEOUT abajo) sin editar el script.
+#   - Docker-outside-of-Docker (CICD-002, Jenkins corriendo en un contenedor): cuando
+#     "docker compose" se invoca desde un proceso que a su vez le habla al daemon REAL
+#     del host via un socket montado (no un daemon anidado), los bind mounts relativos
+#     ("./observability/...") se resuelven contra el directorio de trabajo del PROCESO
+#     QUE LLAMA - pero si ese proceso corre dentro de un contenedor cuyo filesystem no es
+#     un bind mount del host (ej. el workspace de Jenkins vive en un volumen Docker, no en
+#     una ruta real del host), el daemon real no puede resolver esa ruta y el mount falla
+#     ("not a directory: Are you trying to mount a directory onto a file"). Fix: exportar
+#     COMPOSE_PROJECT_DIR apuntando a una ruta que SÍ sea un bind mount real del host
+#     (ver el servicio "jenkins" en docker-compose.dev.yml, que monta el repo en
+#     /workspace-repo para este propósito) - los demás usos de este script (local, CI)
+#     no necesitan setearla, ya corren directo sobre el filesystem real del host.
 
 set -eu
 
@@ -27,6 +39,7 @@ cd "$(dirname "$0")/.."
 
 COMPOSE_FILE="docker-compose.staging.yml"
 ENV_FILE=".env.staging"
+COMPOSE_PROJECT_DIR="${COMPOSE_PROJECT_DIR:-$(pwd)}"
 BUILD_LOCAL="${BUILD_LOCAL:-false}"
 SEED="${SEED:-false}"
 INFRA_TIMEOUT="${INFRA_TIMEOUT:-120}"
@@ -54,7 +67,7 @@ if [ "$BUILD_LOCAL" = "true" ]; then
 fi
 
 echo "start-staging: [1/4] levantando infraestructura (postgres, keycloak, observabilidad) ..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d \
+docker compose --project-directory "$COMPOSE_PROJECT_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d \
   postgres keycloak prometheus cadvisor alertmanager alert-webhook-receiver loki tempo alloy grafana
 
 echo "start-staging: [2/4] esperando healthchecks de infraestructura (timeout ${INFRA_TIMEOUT}s) ..."
@@ -77,12 +90,12 @@ while [ "$ELAPSED" -lt "$INFRA_TIMEOUT" ]; do
 done
 if [ "$ELAPSED" -ge "$INFRA_TIMEOUT" ]; then
   echo "start-staging: TIMEOUT esperando infraestructura healthy tras ${INFRA_TIMEOUT}s —${UNHEALTHY}" >&2
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=50
+  docker compose --project-directory "$COMPOSE_PROJECT_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=50
   exit 1
 fi
 
 echo "start-staging: [3/4] levantando aplicación (backend, frontend) ..."
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d backend frontend
+docker compose --project-directory "$COMPOSE_PROJECT_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d backend frontend
 
 echo "start-staging: esperando healthchecks de aplicación (timeout ${APP_TIMEOUT}s) ..."
 APP_SERVICES="backend frontend"
@@ -104,12 +117,17 @@ while [ "$ELAPSED" -lt "$APP_TIMEOUT" ]; do
 done
 if [ "$ELAPSED" -ge "$APP_TIMEOUT" ]; then
   echo "start-staging: TIMEOUT esperando aplicación healthy tras ${APP_TIMEOUT}s —${UNHEALTHY}" >&2
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=80 backend frontend
+  docker compose --project-directory "$COMPOSE_PROJECT_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=80 backend frontend
   exit 1
 fi
 
 echo "start-staging: [4/4] verificando /actuator/health del backend ..."
-./scripts/wait-for-it.sh -t 30 -i 2 "http://localhost:${BACKEND_PORT:-8082}/actuator/health"
+# HEALTH_CHECK_HOST: por defecto "localhost" (funciona corriendo directo sobre el host
+# real - dev local, CI). Cuando este script corre DENTRO de un contenedor que a su vez le
+# habla al daemon Docker real via un socket montado (Jenkins, CICD-002), "localhost" es
+# el loopback DEL PROPIO CONTENEDOR, no el host real donde el puerto quedo publicado -
+# hace falta "host.docker.internal" (Docker Desktop) en ese caso, ver Jenkinsfile.
+./scripts/wait-for-it.sh -t 30 -i 2 "http://${HEALTH_CHECK_HOST:-localhost}:${BACKEND_PORT:-8082}/actuator/health"
 
 if [ "$SEED" = "true" ]; then
   echo "start-staging: sembrando datos de prueba (seed-staging.sh) ..."
@@ -128,4 +146,4 @@ echo "  Backend:  http://localhost:${BACKEND_PORT:-8082}"
 echo "  Frontend: http://localhost:${FRONTEND_PORT:-8090}"
 echo "  Keycloak: http://localhost:${KEYCLOAK_PORT:-8180}"
 echo "  Grafana:  http://localhost:${GRAFANA_PORT:-3001}"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
+docker compose --project-directory "$COMPOSE_PROJECT_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps

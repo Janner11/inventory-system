@@ -1,0 +1,39 @@
+# CICD-002: plugins preinstalados del controlador Jenkins (jenkins-plugin-cli, ver
+# jenkins/Dockerfile). Sin versión pineada (jenkins-plugin-cli resuelve la última
+# compatible con el core de la imagen base) — mismo criterio que "prom/prometheus:latest"
+# en docker-compose.dev.yml para imágenes sin un motivo real para pinear.
+#
+# Pipeline declarativo (workflow-aggregator agrupa scripted+declarative)
+workflow-aggregator
+# Checkout de repos Git
+git
+# Integracion con GitHub (branch source, status API)
+github
+# Multibranch Pipeline contra GitHub
+github-branch-source
+# Vista clasica de stages con colores
+pipeline-stage-view
+# Pipeline visual (Blue Ocean) - Validaciones del ticket
+blueocean
+# Pasos "docker.build/docker.withRegistry" en Groovy
+docker-workflow
+# Integracion adicional de Docker
+docker-plugin
+# publishHTML (JaCoCo, JUnit/RestAssured, Playwright, ZAP)
+htmlpublisher
+# Publicar resultados JUnit XML
+junit
+# Reporte de cobertura JaCoCo nativo de Jenkins
+jacoco
+# withCredentials() en el Jenkinsfile
+credentials-binding
+# withSonarQubeEnv / waitForQualityGate
+sonar
+# jenkins-casc.yml
+configuration-as-code
+# Provisionar el pipeline job automaticamente (sin clic manual)
+job-dsl
+# Timestamps en el log de cada build
+timestamper
+# Limpieza de workspace entre builds
+ws-cleanup
