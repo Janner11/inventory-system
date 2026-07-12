@@ -4,6 +4,14 @@ plugins {
     id("org.springframework.boot") version "3.3.5"
     id("io.spring.dependency-management") version "1.1.6"
     id("org.owasp.dependencycheck") version "12.2.2"
+    // CICD-001: plugin agregado para que el job "sonarqube" de ci.yml pueda correr
+    // `./gradlew sonar` de verdad. No hay ningun servidor SonarQube desplegado en este
+    // proyecto todavia (ni local ni remoto) - provisionar uno, definir el Quality Gate y
+    // hacer que bloquee el pipeline es el alcance completo de CICD-003 (ticket separado,
+    // "SonarQube integracion y quality gates", 5 SP). Sin `sonar.host.url`/`SONAR_TOKEN`
+    // configurados, el job de CI detecta la ausencia del secret y omite este paso en vez
+    // de fallar - el plugin en si es inerte hasta que se invoca la tarea `sonar`.
+    id("org.sonarqube") version "5.1.0.4882"
 }
 
 group = "com.inventario"
@@ -127,5 +135,19 @@ dependencyCheck {
         nodeEnabled = false
         nuspecEnabled = false
         nugetconfEnabled = false
+    }
+}
+
+// CICD-001: configuracion minima del proyecto para el analisis Sonar (host/token se
+// pasan por linea de comandos en ci.yml via -Dsonar.host.url/-Dsonar.token, no
+// hardcodeados aqui - ninguno de los dos existe todavia, ver nota del plugin arriba).
+sonar {
+    properties {
+        property("sonar.projectKey", "inventario-backend")
+        property("sonar.projectName", "Inventario Backend")
+        property("sonar.sources", "src/main/java")
+        property("sonar.tests", "src/test/java")
+        property("sonar.java.binaries", layout.buildDirectory.dir("classes/java/main").get().asFile.path)
+        property("sonar.coverage.jacoco.xmlReportPaths", layout.buildDirectory.dir("reports/jacoco/test/jacocoTestReport.xml").get().asFile.path)
     }
 }

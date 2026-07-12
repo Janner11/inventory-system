@@ -1,14 +1,44 @@
 name: CI
 
+# CICD-001: trigger obligatorio del ticket — push a develop/main + PR contra develop/main
+# (antes solo cubría push a develop; se agregó "push a main" para que el job docker-push,
+# que solo debe correr en un merge real a main, tenga un evento que lo dispare).
 on:
   push:
-    branches: [develop]
+    branches: [develop, main]
   pull_request:
     branches: [develop, main]
 
+# Necesario para que el job docker-push pueda autenticarse contra GHCR con el
+# GITHUB_TOKEN por defecto del workflow (sin necesitar un PAT manual) — ver
+# CONTRIBUTING.md, sección "Secrets requeridos en CI".
+permissions:
+  contents: read
+  packages: write
+
 jobs:
 
-  build:
+  # El contexto "secrets" no está disponible en el "if:" a nivel de job (solo dentro de
+  # steps/env) — se resuelve la presencia de SONAR_TOKEN acá, en un job previo minúsculo,
+  # y se expone como output para que el job "sonarqube" pueda gatear su propio "if:" con
+  # "needs.check-secrets.outputs...", que sí es un contexto permitido a nivel de job.
+  check-secrets:
+    name: Check optional secrets
+    runs-on: ubuntu-latest
+    outputs:
+      sonar-configured: ${{ steps.check.outputs.sonar-configured }}
+    steps:
+      - name: Check SONAR_TOKEN
+        id: check
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: echo "sonar-configured=${{ env.SONAR_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+  # --- 1/2/3. Checkout + Setup JDK 21 + Maven Build ---------------------------------
+  # El ticket describe "Maven Build"/"mvn package" — el proyecto usa Gradle (sin pom.xml
+  # en ningún lado del repo, ver sección 11 de CLAUDE.md), mismo criterio de adaptación
+  # ya usado en TEST-003/TEST-005 (Maven → Gradle en toda la documentación del backlog).
+  backend-build:
     name: Build
     runs-on: ubuntu-latest
     steps:
@@ -25,10 +55,11 @@ jobs:
         working-directory: backend
         run: ./gradlew build -x test
 
+  # --- 4. Unit Tests + JaCoCo -------------------------------------------------------
   unit-tests:
     name: Unit Tests + Coverage
     runs-on: ubuntu-latest
-    needs: build
+    needs: backend-build
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +72,12 @@ jobs:
 
       - name: Run unit tests
         working-directory: backend
-        run: ./gradlew test --tests "com.inventario.unit.*" jacocoTestReport
+        # TEST-001 (ampliación): jacocoTestCoverageVerification hace la cobertura de
+        # ProductService/StockService "obligatoria" (85% líneas/65% branches) — un fallo
+        # de cobertura ya rompe este job, que es el quality gate real y activo hoy
+        # (Validaciones del ticket: "Quality gate bloquea merge si..." — SonarQube, más
+        # abajo, todavía no tiene servidor real desplegado, ver job "sonarqube").
+        run: ./gradlew test --tests "com.inventario.unit.*" jacocoTestReport jacocoTestCoverageVerification
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -57,10 +93,48 @@ jobs:
           name: jacoco-coverage-report
           path: backend/build/reports/jacoco/test/html/
 
-  integration-tests:
-    name: Integration & API Tests
+  # --- 5. SonarQube Analysis ---------------------------------------------------------
+  sonarqube:
+    name: SonarQube Analysis
     runs-on: ubuntu-latest
-    needs: build
+    needs: [backend-build, check-secrets]
+    # No hay ningún servidor SonarQube desplegado en este proyecto (CICD-003, ticket
+    # separado, sigue sin implementar — ver CLAUDE.md sección 17). Sin SONAR_TOKEN
+    # configurado como secret del repo, este job se omite en vez de fallar el pipeline
+    # entero por una integración que todavía no existe; en cuanto CICD-003 provisione un
+    # servidor y se configure el secret, este mismo job empieza a correr el análisis real
+    # sin ningún cambio de código.
+    if: needs.check-secrets.outputs.sonar-configured == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Run tests with coverage + SonarQube analysis
+        working-directory: backend
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: ./gradlew test jacocoTestReport sonar
+
+  # --- 8. Integration Tests (Testcontainers) -----------------------------------------
+  # Testcontainers en CI: los runners ubuntu-latest de GitHub Actions ya traen Docker
+  # instalado y accesible por defecto (Docker-outside-of-Docker vía el daemon del propio
+  # runner) — no hace falta ninguna configuración adicional de Docker-in-Docker para que
+  # Testcontainers funcione, ya verificado por TEST-002 (SecurityIntegrationTest, con su
+  # propio KeycloakContainer + PostgreSQLContainer). Ver CONTRIBUTING.md para más detalle
+  # sobre este "Caso de Error" del ticket.
+  integration-tests:
+    name: Integration Tests (Testcontainers)
+    runs-on: ubuntu-latest
+    needs: backend-build
     steps:
       - uses: actions/checkout@v4
 
@@ -71,20 +145,45 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Run integration and API tests
+      - name: Run integration tests
         working-directory: backend
-        run: ./gradlew test --tests "com.inventario.integration.*" --tests "com.inventario.api.*"
+        run: ./gradlew test --tests "com.inventario.integration.*"
 
-      - name: Upload test results (XML)
+      - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: integration-test-results
           path: backend/build/test-results/test/
 
+  # --- 9. API Tests (RestAssured) -----------------------------------------------------
+  api-tests:
+    name: API Tests (RestAssured)
+    runs-on: ubuntu-latest
+    needs: backend-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Run API tests
+        working-directory: backend
+        run: ./gradlew test --tests "com.inventario.api.*"
+
+      - name: Upload test results (XML)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-test-results
+          path: backend/build/test-results/test/
+
       # TEST-003: reporte HTML legible (RestAssured/JUnit) de ProductApiTest/StockApiTest/
-      # AuthApiTest/ContractTest, distinto del XML de arriba (pensado para CI) y del
-      # coverage HTML de JaCoCo (unit-tests job) - evidencia pedida explicitamente por el ticket.
+      # AuthApiTest/ContractTest, distinto del XML de arriba (pensado para CI).
       - name: Upload test results (HTML report)
         uses: actions/upload-artifact@v4
         if: always()
@@ -92,10 +191,70 @@ jobs:
           name: api-test-html-report
           path: backend/build/reports/tests/test/
 
-  e2e-tests:
-    name: E2E Tests (Playwright)
+  # --- 6. Build Docker image backend (+ frontend) -------------------------------------
+  # Valida que ambos Dockerfiles siguen construyendo correctamente en cada PR/push, y dejan
+  # las imágenes listas (mismo runner, mismo daemon Docker local) para el job siguiente
+  # (staging-e2e-security), sin necesitar push a ningún registry todavía.
+  docker-build:
+    name: Build Docker Images
     runs-on: ubuntu-latest
-    needs: build
+    needs: backend-build
+    outputs:
+      backend-image: ${{ steps.tags.outputs.backend-image }}
+      frontend-image: ${{ steps.tags.outputs.frontend-image }}
+      backend-image-base: ${{ steps.tags.outputs.backend-image-base }}
+      frontend-image-base: ${{ steps.tags.outputs.frontend-image-base }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tags (GHCR exige el nombre del repo en minúsculas)
+        id: tags
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          {
+            echo "backend-image-base=ghcr.io/${REPO_LOWER}/backend"
+            echo "frontend-image-base=ghcr.io/${REPO_LOWER}/frontend"
+            echo "backend-image=ghcr.io/${REPO_LOWER}/backend:${{ github.sha }}"
+            echo "frontend-image=ghcr.io/${REPO_LOWER}/frontend:${{ github.sha }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build backend image
+        run: docker build -t "${{ steps.tags.outputs.backend-image }}" backend/
+
+      - name: Build frontend image
+        # Build-args apuntando al stack de staging (job siguiente) — VITE_* se hornean en
+        # el bundle en build-time (frontend/Dockerfile, TEST-005), no en runtime.
+        run: |
+          docker build \
+            --build-arg VITE_API_BASE_URL=http://localhost:8082/api \
+            --build-arg VITE_KEYCLOAK_URL=http://localhost:8180 \
+            --build-arg VITE_KEYCLOAK_REALM=inventario \
+            --build-arg VITE_KEYCLOAK_CLIENT_ID=inventario-frontend \
+            -t "${{ steps.tags.outputs.frontend-image }}" frontend/
+
+      - name: Save images to a single tarball
+        run: docker save -o /tmp/staging-images.tar "${{ steps.tags.outputs.backend-image }}" "${{ steps.tags.outputs.frontend-image }}"
+
+      - name: Upload image tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-images
+          path: /tmp/staging-images.tar
+          retention-days: 1
+
+  # --- 7/9/11. Deploy staging + E2E Tests (Playwright) + Security Scan (OWASP ZAP) ----
+  # Adaptación explícita: cada "job" de GitHub Actions corre en una VM aislada nueva — un
+  # `docker compose up` en un job no es alcanzable desde otro job distinto sin un entorno
+  # externo persistente (un servidor/cluster de staging real, que este proyecto académico
+  # no tiene). "Deploy staging" y "correr pruebas contra ese staging ya desplegado" viven
+  # por lo tanto en el MISMO job (pasos secuenciales, cada uno con su propio nombre claro
+  # para la trazabilidad que pide el ticket), en vez de jobs separados que no podrían
+  # comunicarse entre sí en este runner efímero.
+  staging-e2e-security:
+    name: Deploy Staging + E2E + Security Scan
+    runs-on: ubuntu-latest
+    needs: docker-build
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -106,52 +265,36 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # TEST-004: docker-compose.staging.yml (INFRA-004) todavia no existe, asi que el DoD
-      # "Pasan en CI contra staging" se aproxima con el stack de docker-compose.dev.yml
-      # (Postgres + Keycloak con el realm real importado + backend), lo mas cercano a un
-      # entorno real que hoy existe en el repo. No se levantan Grafana/Prometheus/Loki/Tempo/
-      # Alloy - no los necesita el frontend ni los E2E.
-      - name: Start Postgres, Keycloak and backend (docker-compose.dev.yml)
-        run: docker compose -f docker-compose.dev.yml up -d postgres keycloak backend
+      - name: Download image tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-images
+          path: /tmp
 
-      - name: Wait for backend health
+      - name: Load Docker images
+        run: docker load -i /tmp/staging-images.tar
+
+      - name: Prepare .env.staging (valores no-secretos, solo para este runner efímero)
         run: |
-          for i in $(seq 1 60); do
-            if curl -sf http://localhost:8081/actuator/health | grep -q '"status":"UP"'; then
-              echo "backend UP"; exit 0
-            fi
-            sleep 5
-          done
-          echo "backend did not become healthy in time"
-          docker compose -f docker-compose.dev.yml logs backend keycloak
-          exit 1
+          cp .env.staging.example .env.staging
+          sed -i "s#^BACKEND_IMAGE=.*#BACKEND_IMAGE=${{ needs.docker-build.outputs.backend-image }}#" .env.staging
+          sed -i "s#^FRONTEND_IMAGE=.*#FRONTEND_IMAGE=${{ needs.docker-build.outputs.frontend-image }}#" .env.staging
+          sed -i "s/CAMBIAR_password_staging_real/ci-staging-pg-pass/" .env.staging
+          sed -i "s/CAMBIAR_admin_password_staging_real/ci-staging-admin-pass/" .env.staging
+          sed -i "s/CAMBIAR_client_secret_staging_real/inventario-backend-secret/" .env.staging
+          sed -i "s/CAMBIAR_grafana_password_staging_real/ci-staging-grafana-pass/" .env.staging
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
+      - name: Deploy staging (docker-compose.staging.yml)
+        run: ./scripts/start-staging.sh
 
       - name: Install Playwright browsers
         working-directory: frontend
         run: npx playwright install --with-deps chromium firefox
 
-      - name: Start frontend (Vite dev server)
+      - name: Run Playwright E2E tests against staging
         working-directory: frontend
-        run: nohup npm run dev -- --port 5173 > vite.log 2>&1 &
-
-      - name: Wait for frontend
-        run: |
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:5173/ > /dev/null; then
-              echo "frontend UP"; exit 0
-            fi
-            sleep 2
-          done
-          echo "frontend did not become available in time"
-          cat frontend/vite.log || true
-          exit 1
-
-      - name: Run Playwright E2E tests
-        working-directory: frontend
+        env:
+          BASE_URL: http://localhost:8090
         run: npx playwright test
 
       - name: Upload Playwright HTML report
@@ -175,6 +318,79 @@ jobs:
           name: allure-results
           path: frontend/allure-results/
 
-      - name: Dump backend/keycloak logs on failure
+      - name: OWASP ZAP baseline scan (frontend de staging)
+        # Baseline liviano contra el staging ya desplegado, como pide este pipeline
+        # (stage 11). El escaneo completo (baseline + API scan + Dependency-Check,
+        # TEST-005) sigue viviendo en security-scan.yml, con sus propios triggers.
+        run: |
+          mkdir -p zap-reports
+          cp zap-ignore-rules.conf zap-reports/zap-ignore-rules.conf
+          docker run --network host --rm \
+            -v "$(pwd)/zap-reports:/zap/wrk/:rw" \
+            zaproxy/zap-stable zap-baseline.py \
+            -t http://localhost:8090/ \
+            -c zap-ignore-rules.conf \
+            -r baseline-report.html \
+            -x baseline-report.xml \
+            -J baseline-report.json \
+            -I
+
+      - name: Security quality gate — 0 vulnerabilidades HIGH
+        run: python3 scripts/zap-report-gate.py zap-reports/baseline-report.xml
+
+      - name: Upload ZAP report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-staging-baseline-report
+          path: zap-reports/
+
+      - name: Dump staging logs on failure
         if: failure()
-        run: docker compose -f docker-compose.dev.yml logs backend keycloak
+        run: docker compose --env-file .env.staging -f docker-compose.staging.yml logs --tail=200
+
+      - name: Tear down staging
+        if: always()
+        run: docker compose --env-file .env.staging -f docker-compose.staging.yml down -v
+
+  # --- 12. Docker push (solo en push a main) ------------------------------------------
+  docker-push:
+    name: Push Docker Images to GHCR
+    runs-on: ubuntu-latest
+    needs: [docker-build, unit-tests, integration-tests, api-tests, staging-e2e-security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Download image tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-images
+          path: /tmp
+
+      - name: Load Docker images
+        run: docker load -i /tmp/staging-images.tar
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # GHCR_TOKEN (PAT con scope write:packages) es opcional — si no está configurado
+          # como secret del repo, se usa el GITHUB_TOKEN automático del workflow (ya tiene
+          # permiso de escritura de paquetes vía "permissions: packages: write" arriba).
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # Nunca se sube ":latest" sin un tag de versión específico junto a él (sección 14 de
+      # CLAUDE.md, "Prohibiciones") — la imagen ya trae el tag de versión exacto
+      # (el SHA del commit, calculado por el job docker-build); acá solo se le agrega
+      # "latest" además, para consumidores que quieren la versión más reciente de main.
+      - name: Tag and push backend image
+        run: |
+          docker tag "${{ needs.docker-build.outputs.backend-image }}" "${{ needs.docker-build.outputs.backend-image-base }}:latest"
+          docker push "${{ needs.docker-build.outputs.backend-image }}"
+          docker push "${{ needs.docker-build.outputs.backend-image-base }}:latest"
+
+      - name: Tag and push frontend image
+        run: |
+          docker tag "${{ needs.docker-build.outputs.frontend-image }}" "${{ needs.docker-build.outputs.frontend-image-base }}:latest"
+          docker push "${{ needs.docker-build.outputs.frontend-image }}"
+          docker push "${{ needs.docker-build.outputs.frontend-image-base }}:latest"
