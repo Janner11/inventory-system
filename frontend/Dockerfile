@@ -3,7 +3,15 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# Reintento manual: "npm error Exit handler never called!" es un bug conocido de npm
+# (npm/cli#4028) que aparece esporadicamente bajo I/O lento/host con carga alta - se
+# encontro real corriendo este mismo build via Docker-outside-of-Docker desde el
+# contenedor de Jenkins (CICD-002), con el resto del stack de desarrollo (23+
+# contenedores) compitiendo por el mismo daemon Docker; nunca antes visto en
+# GitHub Actions (runner dedicado, sin esa contencion). El propio comando ya es
+# idempotente (mismo lockfile, misma salida esperada), asi que reintentar una vez es
+# seguro.
+RUN npm ci || npm ci
 
 COPY . .
 

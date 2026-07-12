@@ -53,3 +53,8 @@ Thumbs.db
 # === Logs ===
 *.log
 logs/
+
+# === Jenkins (CICD-002) ===
+# Bind mount real del workspace de Jenkins (docker-compose.dev.yml) - checkouts y
+# artefactos de build efimeros, no se versionan.
+/jenkins-workspace/

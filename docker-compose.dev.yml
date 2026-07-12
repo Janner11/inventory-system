@@ -13,6 +13,7 @@ volumes:
   loki_data:
   tempo_data:
   alertmanager_data:
+  jenkins_home:
 
 services:
   postgres:
@@ -282,5 +283,92 @@ services:
       - prometheus
       - loki
       - tempo
+    networks:
+      - inventario-network
+
+  # CICD-002: controlador Jenkins con plugins preinstalados (jenkins/Dockerfile) y
+  # Configuration as Code (jenkins/jenkins-casc.yml). Docker-outside-of-Docker via el
+  # socket del host montado abajo - el daemon real es el mismo que usa el resto de este
+  # docker-compose, no un daemon anidado. Puerto 8095 (no 8090) a proposito: el stage
+  # "Deploy Staging" del Jenkinsfile levanta docker-compose.staging.yml DENTRO de este
+  # mismo host Docker (Docker-outside-of-Docker, no un daemon anidado), y el frontend de
+  # staging ya usa el puerto 8090 por defecto (.env.staging.example) - un choque de
+  # puertos ahi rompería justo el stage que valida el entorno de staging.
+  jenkins:
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    image: inventario-jenkins:dev
+    container_name: inventario-jenkins
+    restart: unless-stopped
+    environment:
+      JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:-admin}
+      # Sin valor por defecto trivial a proposito (igual que las credenciales de
+      # docker-compose.staging.yml) - Jenkins es un panel de administracion real, no
+      # tiene sentido arrancarlo con una contrasena de ejemplo conocida.
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD}
+      JENKINS_URL: http://localhost:${JENKINS_PORT:-8095}/
+      GITHUB_USERNAME: ${GITHUB_USERNAME:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+      # Encontrado real durante la verificacion de CICD-002: Testcontainers (Integration
+      # Tests, TEST-002) intenta arrancar Ryuk (su sidecar de limpieza de recursos) y este
+      # a su vez intenta conectar de vuelta al proceso que lo lanzo usando la IP del
+      # bridge de Docker (172.17.0.1) - una direccion que no es alcanzable desde DENTRO
+      # del contenedor de Jenkins (Docker-outside-of-Docker: los contenedores que arranca
+      # Testcontainers son "hermanos" en el host real, no "hijos" en el namespace de red
+      # de Jenkins). Sin esto, los 4 archivos de test de integracion/API fallan con
+      # "Could not connect to Ryuk". Deshabilitar Ryuk es la mitigacion oficial y
+      # ampliamente usada para Testcontainers corriendo via Docker-outside-of-Docker; la
+      # limpieza de contenedores sigue ocurriendo via los shutdown hooks de la propia JVM
+      # (Testcontainers los registra igual), solo sin la garantia extra de Ryuk ante un
+      # JVM matado abruptamente - aceptable para un agente de Jenkins con builds
+      # controlados, no un entorno hostil.
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+      # Encontrado real (segundo problema de Testcontainers, distinto de Ryuk): incluso
+      # sin Ryuk, los tests seguian fallando con "java.net.ConnectException" al intentar
+      # conectarse a Postgres/Keycloak - Testcontainers, corriendo dentro del contenedor
+      # de Jenkins, intentaba usar "localhost:<puerto-publicado>" para hablarle al
+      # contenedor que el mismo acababa de arrancar, pero ese puerto esta publicado en el
+      # HOST real (Docker Desktop), no en el propio "localhost" DEL CONTENEDOR DE JENKINS.
+      # "host.docker.internal" es el nombre DNS especial de Docker Desktop que SI resuelve
+      # al host real desde cualquier contenedor - fuerza a Testcontainers a usarlo en vez
+      # de intentar auto-detectarlo.
+      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
+      # Encontrado real (Deploy Staging): en Docker Desktop para macOS, el daemon real
+      # (corriendo en la VM de Docker Desktop) solo puede resolver como bind mount una ruta
+      # que sea una ruta real de macOS ya compartida con esa VM (tipicamente cualquier cosa
+      # bajo /Users/...) - no una ruta que solo tiene sentido DENTRO del contenedor de
+      # Jenkins que hizo la llamada (ni "/var/jenkins_home/...", ni "/workspace-repo"),
+      # aunque ese contenedor SI vea archivos reales ahi via sus propios bind mounts. Por
+      # eso hace falta la ruta real de macOS explicita para que docker-compose.staging.yml
+      # (levantado desde DENTRO de Jenkins, Docker-outside-of-Docker) pueda resolver sus
+      # bind mounts relativos ("./observability/...") correctamente - ver Jenkinsfile,
+      # stage "Deploy Staging" (COMPOSE_PROJECT_DIR) y docs/cicd/jenkins.md. En un host
+      # Linux real (sin la capa de traduccion de Docker Desktop) este problema no existe:
+      # las rutas del contenedor y del daemon ya coinciden de forma natural.
+      HOST_WORKSPACE_ROOT: /Users/janner/Desktop/inventory-system/jenkins-workspace
+    ports:
+      - "${JENKINS_PORT:-8095}:8080"
+      - "${JENKINS_AGENT_PORT:-50000}:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Checkout local del propio repo (solo lectura) - el job Pipeline provisionado por
+      # JCasC (jenkins-casc.yml) lo usa como remoto "file:///workspace-repo" en vez de un
+      # webhook real de GitHub (ver "Casos de Error" del ticket y docs/cicd/jenkins.md).
+      - .:/workspace-repo:ro
+      # Encontrado real durante la verificacion de CICD-002: el workspace donde Jenkins
+      # hace checkout (dentro del volumen nombrado "jenkins_home" de arriba) no es una
+      # ruta real del host - es un volumen Docker gestionado internamente. Cualquier stage
+      # que le pase una ruta relativa/`$(pwd)` a un contenedor "hermano" via el socket de
+      # Docker montado (docker-compose.staging.yml, "docker run -v $(pwd)/...") falla,
+      # porque el daemon REAL del host no puede resolver una ruta que solo existe dentro
+      # del propio contenedor de Jenkins ("not a directory: Are you trying to mount a
+      # directory onto a file"). Fix estandar para Jenkins-en-Docker con
+      # Docker-outside-of-Docker: bind-montear el subdirectorio de workspaces a una ruta
+      # real del host, para que "$(pwd)" dentro de un build SIEMPRE sea una ruta que el
+      # daemon real tambien puede ver y montar.
+      - ./jenkins-workspace:/var/jenkins_home/workspace
     networks:
       - inventario-network
