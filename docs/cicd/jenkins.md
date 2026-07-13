@@ -17,7 +17,7 @@ mismo quality gate de seguridad (`scripts/zap-report-gate.py`, TEST-005).
 | 6. Deploy Staging | `docker-compose.staging.yml` real, vía `scripts/start-staging.sh` |
 | 7. E2E Tests | Playwright contra el staging recién desplegado |
 | 8. Security Scan | ZAP baseline contra el frontend de staging |
-| 9. Quality Gate | `zap-report-gate.py` (0 HIGH, siempre activo) + SonarQube (condicional, ver abajo) |
+| 9. Quality Gate | `zap-report-gate.py` (0 HIGH, siempre activo) + SonarQube ("Inventario Quality Gate" contra el servidor real de `docker-compose.dev.yml`, CICD-003 — ver [`docs/cicd/sonarqube.md`](./sonarqube.md)) |
 | 10. Publish Reports | `junit` + `publishHTML` (JaCoCo, JUnit/RestAssured, Playwright, ZAP) + `archiveArtifacts` |
 
 Los stages 3/4/7/8 están envueltos en `catchError(buildResult: 'UNSTABLE', ...)`
@@ -144,8 +144,9 @@ la lógica de negocio del pipeline en sí:
 punta contra infraestructura real — Unit Tests, Integration Tests, Build
 Docker Images, Deploy Staging (12 contenedores healthy), Security Scan
 (ZAP baseline `FAIL-NEW: 0, PASS: 62`) y Quality Gate (`0 vulnerabilidades
-HIGH`, SonarQube omitido limpiamente sin servidor real) pasan de forma
-consistente. E2E Tests mejoró de 0/27 (bug #6) a 11/27 pasando en la última
+HIGH`; el análisis real de SonarQube contra el servidor de CICD-003 se
+verificó por separado — ver [`docs/cicd/sonarqube.md`](./sonarqube.md)) pasan
+de forma consistente. E2E Tests mejoró de 0/27 (bug #6) a 11/27 pasando en la última
 corrida — el resto mostró señales de **contención de recursos** (Chromium
 crasheando bajo carga, `"Navigation failed because page crashed!"`) al
 correr Jenkins simultáneamente con el resto del stack de desarrollo

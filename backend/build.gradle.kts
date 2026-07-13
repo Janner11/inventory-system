@@ -138,9 +138,13 @@ dependencyCheck {
     }
 }
 
-// CICD-001: configuracion minima del proyecto para el analisis Sonar (host/token se
-// pasan por linea de comandos en ci.yml via -Dsonar.host.url/-Dsonar.token, no
-// hardcodeados aqui - ninguno de los dos existe todavia, ver nota del plugin arriba).
+// CICD-001/CICD-003: configuracion del proyecto para el analisis Sonar (host/token se
+// pasan por linea de comandos o variables de entorno SONAR_HOST_URL/SONAR_TOKEN en
+// ci.yml/Jenkinsfile, no hardcodeados aqui). CICD-003 desplego el servidor real
+// (docker-compose.dev.yml, servicio "sonarqube") y configuro "Inventario Quality Gate"
+// (Coverage >= 70%, 0 new bugs, 0 new vulnerabilities, <= 10 new code smells,
+// duplicacion <= 3%) asignado al proyecto "inventario-backend" via API - ver
+// docs/cicd/sonarqube.md.
 sonar {
     properties {
         property("sonar.projectKey", "inventario-backend")
@@ -149,5 +153,9 @@ sonar {
         property("sonar.tests", "src/test/java")
         property("sonar.java.binaries", layout.buildDirectory.dir("classes/java/main").get().asFile.path)
         property("sonar.coverage.jacoco.xmlReportPaths", layout.buildDirectory.dir("reports/jacoco/test/jacocoTestReport.xml").get().asFile.path)
+        // Paso 7 del ticket: bloquea la tarea "sonar" (y por lo tanto el pipeline) hasta
+        // que el servidor evalue el Quality Gate, fallando la build si no lo pasa - no
+        // solo sube el analisis y sigue de largo.
+        property("sonar.qualitygate.wait", "true")
     }
 }

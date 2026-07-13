@@ -188,20 +188,39 @@ pipeline {
 
         stage('Quality Gate') {
             // 2 gates independientes: (1) ZAP - 0 vulnerabilidades HIGH (real, siempre
-            // activo, TEST-005) y (2) SonarQube - solo si hay credencial "sonar-token"
-            // configurada (jenkins-casc.yml); sin servidor real desplegado todavia
-            // (CICD-003), se omite en vez de fallar el pipeline por una integracion que
-            // no existe, mismo criterio que el job "sonarqube" de ci.yml.
+            // activo, TEST-005) y (2) SonarQube - "Inventario Quality Gate" (Coverage
+            // >= 70%, 0 new bugs, 0 new vulnerabilities, <= 10 new code smells,
+            // duplicacion <= 3%; ver docs/cicd/sonarqube.md). CICD-003 desplego el
+            // servidor real (docker-compose.dev.yml, servicio "sonarqube") en la MISMA
+            // red Docker que este contenedor de Jenkins - se alcanza por nombre de
+            // servicio ("http://sonarqube:9000"), sin necesitar exponerlo al host. Si la
+            // credencial "sonar-token" esta vacia (servidor no desplegado en este
+            // entorno), se omite en vez de fallar - mismo criterio que el job
+            // "sonarqube" de ci.yml, que ademas levanta su propio SonarQube efimero
+            // cuando no hay uno persistente.
             steps {
                 sh 'python3 scripts/zap-report-gate.py zap-reports/baseline-report.xml'
                 script {
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         if (env.SONAR_TOKEN?.trim()) {
+                            // Encontrado real: el cache de scanner-engine en
+                            // ~/.sonar/cache (workspace persistente entre builds, a
+                            // diferencia de un runner efimero de GitHub Actions) puede
+                            // quedar con una version incompatible con la API del
+                            // servidor real ("Error 404 ... Unknown url:
+                            // /api/ce/submit") si alguna corrida anterior en este mismo
+                            // Jenkins bootstrapeo un engine distinto (ej. contra otra
+                            // instancia/version de SonarQube). Limpiarlo antes de cada
+                            // analisis evita esa clase de fallo por unos segundos extra
+                            // de descarga.
+                            sh 'rm -rf "$HOME/.sonar/cache"'
                             dir('backend') {
-                                sh './gradlew sonar'
+                                withEnv(["SONAR_HOST_URL=http://sonarqube:9000"]) {
+                                    sh './gradlew sonar'
+                                }
                             }
                         } else {
-                            echo 'Quality Gate: SONAR_TOKEN vacio - sin servidor SonarQube real desplegado (CICD-003), se omite el analisis.'
+                            echo 'Quality Gate: SONAR_TOKEN vacio - sin credencial configurada para el SonarQube real (docker-compose.dev.yml), se omite el analisis.'
                         }
                     }
                 }

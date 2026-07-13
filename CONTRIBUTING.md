@@ -15,10 +15,9 @@ contra `develop`/`main`. Jobs, en el orden en que corren:
 
 | Job | Qué hace | Depende de |
 |---|---|---|
-| `check-secrets` | Detecta si `SONAR_TOKEN` está configurado (gate del job `sonarqube`). | — |
 | `backend-build` | `./gradlew build -x test`. | — |
 | `unit-tests` | Unit tests + JaCoCo + `jacocoTestCoverageVerification` (gate real: 85% líneas/65% branches en `ProductService`/`StockService`, TEST-001). | `backend-build` |
-| `sonarqube` | `./gradlew sonar` — **solo corre si `SONAR_TOKEN` está configurado** (ver abajo). | `backend-build`, `check-secrets` |
+| `sonarqube` | `./gradlew sonar` contra el "Inventario Quality Gate" (CICD-003) — levanta su propio SonarQube efímero como service container si no hay `SONAR_TOKEN`/`SONAR_HOST_URL` configurados apuntando a un servidor real persistente (ver [`docs/cicd/sonarqube.md`](docs/cicd/sonarqube.md)). | `backend-build` |
 | `integration-tests` | Tests de integración (Testcontainers — Postgres/Keycloak reales). | `backend-build` |
 | `api-tests` | Tests de API (RestAssured). | `backend-build` |
 | `docker-build` | Construye las imágenes Docker de backend y frontend, las guarda como artifact para los jobs siguientes (sin publicarlas a ningún registry todavía). | `backend-build` |
@@ -53,15 +52,15 @@ Configurar en *Settings → Secrets and variables → Actions* del repositorio d
 
 | Secret | Requerido | Usado por | Qué pasa si falta |
 |---|---|---|---|
-| `SONAR_TOKEN` | No | job `sonarqube` (`ci.yml`) | El job se omite (skip, no falla el pipeline) — no hay ningún servidor SonarQube desplegado en este proyecto todavía (CICD-003, ticket separado). |
+| `SONAR_TOKEN` | No | job `sonarqube` (`ci.yml`) | El job levanta su propio SonarQube Community efímero (service container) en vez de omitirse — el análisis y el "Inventario Quality Gate" (CICD-003) corren igual, sin necesitar ningún servidor externo. Si se configura, apunta a un servidor real persistente en su lugar. |
 | `SONAR_HOST_URL` | No | job `sonarqube` (`ci.yml`) | Mismo caso — solo se usa si `SONAR_TOKEN` también está configurado. |
 | `GHCR_TOKEN` | No | job `docker-push` (`ci.yml`) | Se usa el `GITHUB_TOKEN` automático del workflow en su lugar (ya tiene permiso de escritura de paquetes vía `permissions: packages: write` en `ci.yml`) — un PAT manual (`GHCR_TOKEN`) solo hace falta si se necesita un token con permisos distintos a los del `GITHUB_TOKEN` por defecto. |
 | `NVD_API_KEY` | No | job `dependency-check` (`security-scan.yml`, TEST-005) | El scan sigue funcionando, pero las actualizaciones de la base de datos del NVD son extremadamente lentas (rate limit público). |
 
 Ninguno de estos secrets es estrictamente obligatorio para que el pipeline pase en
-verde — los jobs que dependen de ellos están diseñados para omitirse (SonarQube) o usar
-un fallback razonable (GHCR) en su ausencia, en vez de fallar el pipeline entero por una
-integración externa opcional.
+verde — los jobs que dependen de ellos están diseñados con un fallback funcional real
+en su ausencia (SonarQube efímero, `GITHUB_TOKEN` para GHCR) en vez de fallar el
+pipeline entero por una integración externa opcional.
 
 ## Ejecutar el pipeline localmente antes de un PR
 

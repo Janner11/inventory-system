@@ -44,7 +44,7 @@ credentials:
               scope: GLOBAL
               id: "sonar-token"
               secret: "${SONAR_TOKEN:-}"
-              description: "SonarQube — token de analisis (CICD-003, sin servidor real todavia; el stage Quality Gate lo detecta ausente y se omite)"
+              description: "SonarQube — token de analisis (CICD-003; servidor real en docker-compose.dev.yml, servicio 'sonarqube', alcanzable por nombre en la misma red Docker). Generar en http://localhost:9001 -> My Account -> Security -> Tokens y setear SONAR_TOKEN en .env. Vacio, el stage Quality Gate lo detecta ausente y se omite."
 
 unclassified:
   location:

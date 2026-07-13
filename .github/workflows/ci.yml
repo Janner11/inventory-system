@@ -18,22 +18,6 @@ permissions:
 
 jobs:
 
-  # El contexto "secrets" no está disponible en el "if:" a nivel de job (solo dentro de
-  # steps/env) — se resuelve la presencia de SONAR_TOKEN acá, en un job previo minúsculo,
-  # y se expone como output para que el job "sonarqube" pueda gatear su propio "if:" con
-  # "needs.check-secrets.outputs...", que sí es un contexto permitido a nivel de job.
-  check-secrets:
-    name: Check optional secrets
-    runs-on: ubuntu-latest
-    outputs:
-      sonar-configured: ${{ steps.check.outputs.sonar-configured }}
-    steps:
-      - name: Check SONAR_TOKEN
-        id: check
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: echo "sonar-configured=${{ env.SONAR_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
-
   # --- 1/2/3. Checkout + Setup JDK 21 + Maven Build ---------------------------------
   # El ticket describe "Maven Build"/"mvn package" — el proyecto usa Gradle (sin pom.xml
   # en ningún lado del repo, ver sección 11 de CLAUDE.md), mismo criterio de adaptación
@@ -94,17 +78,39 @@ jobs:
           path: backend/build/reports/jacoco/test/html/
 
   # --- 5. SonarQube Analysis ---------------------------------------------------------
+  # CICD-003: no hay ningún servidor SonarQube persistente/hosteado para este proyecto
+  # académico (ni presupuesto para SonarCloud). En vez de dejar este job condicionado a
+  # un secret que nunca se configuraría, se levanta un SonarQube Community efímero como
+  # "service container" del propio job — vive solo durante esta corrida, se destruye al
+  # terminar — y se le aplica el mismo Quality Gate ("Inventario Quality Gate": Coverage
+  # >= 70%, 0 new bugs, 0 new vulnerabilities, <= 10 new code smells, duplicación <= 3%,
+  # ver docs/cicd/sonarqube.md) vía la API REST antes de analizar. Si en el futuro se
+  # dispone de un servidor real y persistente, `secrets.SONAR_TOKEN`/`SONAR_HOST_URL`
+  # sobrescriben este comportamiento (ver step "Analyze").
   sonarqube:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
-    needs: [backend-build, check-secrets]
-    # No hay ningún servidor SonarQube desplegado en este proyecto (CICD-003, ticket
-    # separado, sigue sin implementar — ver CLAUDE.md sección 17). Sin SONAR_TOKEN
-    # configurado como secret del repo, este job se omite en vez de fallar el pipeline
-    # entero por una integración que todavía no existe; en cuanto CICD-003 provisione un
-    # servidor y se configure el secret, este mismo job empieza a correr el análisis real
-    # sin ningún cambio de código.
-    if: needs.check-secrets.outputs.sonar-configured == 'true'
+    needs: backend-build
+    services:
+      sonarqube-db:
+        image: postgres:16
+        env:
+          POSTGRES_DB: sonarqube
+          POSTGRES_USER: sonarqube
+          POSTGRES_PASSWORD: sonarqube
+        options: >-
+          --health-cmd "pg_isready -U sonarqube"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      sonarqube:
+        image: sonarqube:lts-community
+        env:
+          SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonarqube
+          SONAR_JDBC_USERNAME: sonarqube
+          SONAR_JDBC_PASSWORD: sonarqube
+        ports:
+          - 9000:9000
     steps:
       - uses: actions/checkout@v4
         with:
@@ -117,11 +123,63 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Run tests with coverage + SonarQube analysis
-        working-directory: backend
+      # El contexto "secrets" no está permitido en un "if:" de step según actionlint
+      # (conservador — no puede verificar en tiempo de lint qué secrets existen); se
+      # resuelve acá, dentro de un "run:" (donde sí es válido), y se expone como output
+      # para que los steps siguientes usen "steps.check-sonar-secret.outputs..." en su
+      # "if:" en su lugar.
+      - name: Check for a persistent SONAR_TOKEN secret
+        id: check-sonar-secret
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: echo "configured=${{ env.SONAR_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for ephemeral SonarQube to be UP
+        if: steps.check-sonar-secret.outputs.configured != 'true'
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf http://localhost:9000/api/system/status | grep -q '"status":"UP"'; then
+              echo "SonarQube UP"; exit 0
+            fi
+            sleep 5
+          done
+          echo "SonarQube no llegó a UP a tiempo"; exit 1
+
+      - name: Provision ephemeral SonarQube (admin password, project, Quality Gate, token)
+        if: steps.check-sonar-secret.outputs.configured != 'true'
+        run: |
+          curl -sf -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
+            -d "login=admin" -d "password=${{ github.run_id }}CiTemp!" -d "previousPassword=admin"
+          AUTH="admin:${{ github.run_id }}CiTemp!"
+
+          curl -sf -u "$AUTH" -X POST "http://localhost:9000/api/projects/create" \
+            -d "name=Inventario Backend" -d "project=inventario-backend"
+
+          curl -sf -u "$AUTH" -X POST "http://localhost:9000/api/qualitygates/create" \
+            -d "name=Inventario Quality Gate"
+          curl -sf -u "$AUTH" -X POST "http://localhost:9000/api/qualitygates/create_condition" \
+            -d "gateName=Inventario Quality Gate" -d "metric=coverage" -d "op=LT" -d "error=70"
+          curl -sf -u "$AUTH" -X POST "http://localhost:9000/api/qualitygates/create_condition" \
+            -d "gateName=Inventario Quality Gate" -d "metric=new_bugs" -d "op=GT" -d "error=0"
+          curl -sf -u "$AUTH" -X POST "http://localhost:9000/api/qualitygates/create_condition" \
+            -d "gateName=Inventario Quality Gate" -d "metric=new_vulnerabilities" -d "op=GT" -d "error=0"
+          curl -sf -u "$AUTH" -X POST "http://localhost:9000/api/qualitygates/create_condition" \
+            -d "gateName=Inventario Quality Gate" -d "metric=new_code_smells" -d "op=GT" -d "error=10"
+          curl -sf -u "$AUTH" -X POST "http://localhost:9000/api/qualitygates/create_condition" \
+            -d "gateName=Inventario Quality Gate" -d "metric=duplicated_lines_density" -d "op=GT" -d "error=3"
+          curl -sf -u "$AUTH" -X POST "http://localhost:9000/api/qualitygates/select" \
+            -d "gateName=Inventario Quality Gate" -d "projectKey=inventario-backend"
+
+          TOKEN_JSON=$(curl -sf -u "$AUTH" -X POST "http://localhost:9000/api/user_tokens/generate" -d "name=ci-${{ github.run_id }}")
+          echo "EPHEMERAL_SONAR_TOKEN=$(echo "$TOKEN_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')" >> "$GITHUB_ENV"
+
+      - name: Run tests with coverage + SonarQube analysis (sonar.qualitygate.wait=true)
+        working-directory: backend
+        env:
+          # Prioriza un servidor real persistente si está configurado (secrets); si no,
+          # usa el SonarQube efímero recién provisionado en este mismo job.
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || 'http://localhost:9000' }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN || env.EPHEMERAL_SONAR_TOKEN }}
         run: ./gradlew test jacocoTestReport sonar
 
   # --- 8. Integration Tests (Testcontainers) -----------------------------------------
