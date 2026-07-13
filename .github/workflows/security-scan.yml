@@ -79,6 +79,14 @@ jobs:
     name: OWASP ZAP API Scan (Backend)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      # SONARQUBE_DB_PASSWORD no tiene default (CICD-003, a proposito) - Compose valida
+      # el archivo completo antes de levantar/parsear nada, asi que CUALQUIER
+      # "docker compose -f docker-compose.dev.yml ..." de este job falla sin esto (no
+      # solo el "up -d" inicial, tambien los "logs" de diagnostico que corren en fallos -
+      # encontrado real en CI: un fix que solo cubria el primer comando dejaba los demas
+      # rotos). Un valor cualquiera alcanza: este job nunca arranca sonarqube/sonarqube-db.
+      SONARQUBE_DB_PASSWORD: ci-placeholder-unused
     steps:
       - uses: actions/checkout@v4
 
@@ -94,13 +102,6 @@ jobs:
         run: ./gradlew build -x test
 
       - name: Start Postgres, Keycloak and backend (docker-compose.dev.yml)
-        # SONARQUBE_DB_PASSWORD no tiene default (CICD-003, a proposito - ver
-        # docker-compose.dev.yml) - Docker Compose interpola/valida el archivo COMPLETO
-        # antes de decidir que servicios levantar, asi que un "up -d postgres keycloak
-        # backend" falla igual aunque sonarqube/sonarqube-db ni se toquen. Un valor
-        # cualquiera alcanza: este job nunca arranca esos 2 servicios.
-        env:
-          SONARQUBE_DB_PASSWORD: ci-placeholder-unused
         run: docker compose -f docker-compose.dev.yml up -d postgres keycloak backend
 
       - name: Wait for backend health
