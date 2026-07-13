@@ -193,6 +193,11 @@ pipeline {
                 catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                     sh '''
                         mkdir -p zap-reports
+                        # zaproxy/zap-stable corre como uid 1000 no-root - en un host Linux
+                        # real (a diferencia de Docker Desktop/macOS, que traduce permisos
+                        # distinto) esto puede fallar con AccessDeniedException al escribir
+                        # el reporte (encontrado real en GitHub Actions, ver security-scan.yml).
+                        chmod -R 777 zap-reports
                         cp zap-ignore-rules.conf zap-reports/zap-ignore-rules.conf
                         ZAP_REPORTS_DIR="$(pwd)/zap-reports"
                         if [ -n "${HOST_WORKSPACE_ROOT:-}" ]; then
