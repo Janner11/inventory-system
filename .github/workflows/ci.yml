@@ -375,6 +375,14 @@ jobs:
       - name: Deploy staging (docker-compose.staging.yml)
         run: ./scripts/start-staging.sh
 
+      - name: Install frontend dependencies
+        # Sin este paso, "npx playwright test" falla con
+        # "Cannot find package '@playwright/test'" - npx solo resuelve un paquete
+        # "playwright" standalone via su propio cache, no instala node_modules/ del
+        # proyecto (que es de donde playwright.config.js importa @playwright/test).
+        working-directory: frontend
+        run: npm ci
+
       - name: Install Playwright browsers
         working-directory: frontend
         run: npx playwright install --with-deps chromium firefox
@@ -412,6 +420,10 @@ jobs:
         # TEST-005) sigue viviendo en security-scan.yml, con sus propios triggers.
         run: |
           mkdir -p zap-reports
+          # zaproxy/zap-stable corre como uid 1000 no-root - en un runner Linux real no
+          # puede escribir el reporte en el directorio recien creado sin esto (mismo
+          # bug y mismo fix que los 2 jobs de security-scan.yml).
+          chmod -R 777 zap-reports
           cp zap-ignore-rules.conf zap-reports/zap-ignore-rules.conf
           docker run --network host --rm \
             -v "$(pwd)/zap-reports:/zap/wrk/:rw" \

@@ -26,10 +26,16 @@ jobs:
         working-directory: backend
         run: ./gradlew build -x test
 
-      # docker-compose.staging.yml (INFRA-004) todavia no existe (mismo gap ya documentado
-      # en TEST-004/TEST-005) - se usa docker-compose.dev.yml como la aproximacion mas
-      # cercana a "staging" disponible hoy en el repo.
+      # docker-compose.dev.yml usado como aproximacion de "staging" para este job (mismo
+      # patron que security-scan.yml); migrar a docker-compose.staging.yml (INFRA-004,
+      # ya implementado) sigue pendiente como mejora futura, ver CLAUDE.md.
       - name: Start Postgres, Keycloak and backend (docker-compose.dev.yml)
+        # SONARQUBE_DB_PASSWORD no tiene default (CICD-003, a proposito) - Compose valida
+        # el archivo completo antes de levantar nada, asi que un "up -d" parcial falla
+        # igual aunque sonarqube/sonarqube-db no se toquen aqui. Ver el mismo fix en
+        # security-scan.yml.
+        env:
+          SONARQUBE_DB_PASSWORD: ci-placeholder-unused
         run: docker compose -f docker-compose.dev.yml up -d postgres keycloak backend
 
       - name: Wait for backend health
@@ -45,6 +51,12 @@ jobs:
       - name: Run k6 load test
         run: |
           mkdir -p tests/performance/results
+          # grafana/k6 corre como usuario no-root dentro del contenedor - en un runner
+          # Linux real no puede escribir en el directorio recien creado sin esto (mismo
+          # problema y mismo fix que zaproxy/zap-stable en security-scan.yml -
+          # "permission denied" al abrir load-test-summary.json/load-test-results.json,
+          # encontrado real en CI).
+          chmod -R 777 tests/performance/results
           docker run --network host --rm \
             -v "$(pwd)/tests/performance:/scripts:rw" \
             -e KEYCLOAK_URL=http://localhost:8080 \
