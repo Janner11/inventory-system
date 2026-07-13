@@ -14,6 +14,10 @@ volumes:
   tempo_data:
   alertmanager_data:
   jenkins_home:
+  sonarqube_db_data:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
 
 services:
   postgres:
@@ -370,5 +374,66 @@ services:
       # real del host, para que "$(pwd)" dentro de un build SIEMPRE sea una ruta que el
       # daemon real tambien puede ver y montar.
       - ./jenkins-workspace:/var/jenkins_home/workspace
+    networks:
+      - inventario-network
+
+  # CICD-003: base de datos DEDICADA para SonarQube - separada de "postgres" (la del
+  # backend) porque SonarQube exige ciertos ajustes de conexion propios (max_connections,
+  # extensiones) y para no acoplar el ciclo de vida de ambos datos.
+  sonarqube-db:
+    image: postgres:16
+    container_name: inventario-sonarqube-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SONARQUBE_DB:-sonarqube}
+      POSTGRES_USER: ${SONARQUBE_DB_USER:-sonarqube}
+      POSTGRES_PASSWORD: ${SONARQUBE_DB_PASSWORD:?debe definirse en .env, sin default trivial}
+    volumes:
+      - sonarqube_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SONARQUBE_DB_USER:-sonarqube} -d ${SONARQUBE_DB:-sonarqube}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - inventario-network
+
+  # CICD-003: sonarqube:lts-community (Alcance Tecnico del ticket). Elasticsearch
+  # embebido requiere vm.max_map_count >= 262144 en el host Docker (ya cumplido por
+  # defecto en Docker Desktop, verificado: exactamente 262144) y ulimits de memlock/nofile
+  # mas altos que el default - sin esto el contenedor crashea en el arranque con
+  # "max virtual memory areas vm.max_map_count [65530] is too low".
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: inventario-sonarqube
+    restart: unless-stopped
+    depends_on:
+      sonarqube-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/${SONARQUBE_DB:-sonarqube}
+      SONAR_JDBC_USERNAME: ${SONARQUBE_DB_USER:-sonarqube}
+      SONAR_JDBC_PASSWORD: ${SONARQUBE_DB_PASSWORD:?debe definirse en .env, sin default trivial}
+    ulimits:
+      nofile:
+        soft: 131072
+        hard: 131072
+      nproc: 8192
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    ports:
+      - "${SONARQUBE_PORT:-9001}:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
     networks:
       - inventario-network
