@@ -299,10 +299,14 @@ proyecto académico no tiene un entorno de producción persistente) en
 
 | Documento | Contenido |
 |---|---|
+| [`docs/requirements.md`](docs/requirements.md) | Requisitos funcionales y no funcionales, trazables a código |
+| [`docs/user-manual.md`](docs/user-manual.md) | Manual de usuario ilustrado con capturas reales |
 | [`docs/architecture.md`](docs/architecture.md) | Diagramas de arquitectura, modelo de datos, flujo de auth, ADRs |
 | [`docs/security/keycloak.md`](docs/security/keycloak.md) | Realm, scopes, roles, usuarios de prueba |
 | [`docs/observability/README.md`](docs/observability/README.md) | Stack de observabilidad, flujo de datos, [`loki-queries.md`](docs/observability/loki-queries.md), [`alerts.md`](docs/observability/alerts.md) |
 | [`docs/testing/testing-strategy.md`](docs/testing/testing-strategy.md) | Los 6 niveles de testing, comandos, dónde vive cada suite |
+| [`docs/testing/test-cases.md`](docs/testing/test-cases.md) | Casos de prueba manuales ejecutables por módulo |
+| [`docs/testing/qa-evidence.md`](docs/testing/qa-evidence.md) | Resumen ejecutivo de evidencia real de calidad (tests, cobertura, seguridad, rendimiento) |
 | [`docs/testing/exploratory-testing-report.md`](docs/testing/exploratory-testing-report.md) | 3 sesiones de exploratory testing (SBTM) y hallazgos |
 | [`docs/deployment.md`](docs/deployment.md) | Staging y producción |
 | [`docs/staging.md`](docs/staging.md) | Detalle operativo del entorno de staging |
