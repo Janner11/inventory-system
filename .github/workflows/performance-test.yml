@@ -12,6 +12,14 @@ jobs:
     name: k6 Load Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # SONARQUBE_DB_PASSWORD no tiene default (CICD-003, a proposito) - Compose valida
+      # el archivo completo antes de levantar/parsear nada, asi que CUALQUIER
+      # "docker compose -f docker-compose.dev.yml ..." de este job falla sin esto (el
+      # "up -d" inicial, pero tambien los "logs" de diagnostico - encontrado real en CI,
+      # un paso que solo puso este env en el primer comando dejaba los demas rotos).
+      # Un valor cualquiera alcanza: este job nunca arranca sonarqube/sonarqube-db.
+      SONARQUBE_DB_PASSWORD: ci-placeholder-unused
     steps:
       - uses: actions/checkout@v4
 
@@ -30,12 +38,6 @@ jobs:
       # patron que security-scan.yml); migrar a docker-compose.staging.yml (INFRA-004,
       # ya implementado) sigue pendiente como mejora futura, ver CLAUDE.md.
       - name: Start Postgres, Keycloak and backend (docker-compose.dev.yml)
-        # SONARQUBE_DB_PASSWORD no tiene default (CICD-003, a proposito) - Compose valida
-        # el archivo completo antes de levantar nada, asi que un "up -d" parcial falla
-        # igual aunque sonarqube/sonarqube-db no se toquen aqui. Ver el mismo fix en
-        # security-scan.yml.
-        env:
-          SONARQUBE_DB_PASSWORD: ci-placeholder-unused
         run: docker compose -f docker-compose.dev.yml up -d postgres keycloak backend
 
       - name: Wait for backend health
@@ -45,6 +47,23 @@ jobs:
             sleep 5
           done
           echo "backend did not become healthy in time"
+          docker compose -f docker-compose.dev.yml logs backend keycloak
+          exit 1
+
+      - name: Wait for Keycloak readiness
+        # El backend puede reportarse "UP" (solo valida su propia conexion a Postgres)
+        # mientras Keycloak todavia esta terminando de arrancar - k6 hace login real
+        # contra Keycloak en su setup() y encontro esta carrera real en CI
+        # ("connection reset by peer" en el primer POST a /protocol/openid-connect/token,
+        # exit code 107 de k6). Se espera explicitamente por /health/ready de Keycloak
+        # (mismo endpoint que ya usa su propio HEALTHCHECK en docker-compose.dev.yml),
+        # no solo por el backend.
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/health/ready | grep -q '"status": "UP"' && echo "keycloak UP" && exit 0
+            sleep 5
+          done
+          echo "keycloak did not become ready in time"
           docker compose -f docker-compose.dev.yml logs backend keycloak
           exit 1
 
