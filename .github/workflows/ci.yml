@@ -375,6 +375,14 @@ jobs:
       - name: Deploy staging (docker-compose.staging.yml)
         run: ./scripts/start-staging.sh
 
+      - name: Install frontend dependencies
+        # Sin este paso, "npx playwright test" falla con
+        # "Cannot find package '@playwright/test'" - npx solo resuelve un paquete
+        # "playwright" standalone via su propio cache, no instala node_modules/ del
+        # proyecto (que es de donde playwright.config.js importa @playwright/test).
+        working-directory: frontend
+        run: npm ci
+
       - name: Install Playwright browsers
         working-directory: frontend
         run: npx playwright install --with-deps chromium firefox
