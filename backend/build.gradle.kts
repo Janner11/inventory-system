@@ -30,6 +30,14 @@ repositories {
     mavenCentral()
 }
 
+// CICD-004: Trivy encontro 3 CVE CRITICAL reales en tomcat-embed-core 10.1.31 (version
+// gestionada por el BOM de Spring Boot 3.3.5) - CVE-2025-24813, CVE-2026-41293,
+// CVE-2026-43512, CVE-2026-43515. Se sobreescribe solo esta propiedad del BOM (mecanismo
+// estandar de Spring Boot/Maven, "tomcat.version") a un patch dentro de la misma linea
+// 10.1.x (API estable entre patches) en vez de saltar de linea de Spring Boot - build y
+// suite completa de tests verificados sin regresiones tras el cambio.
+extra["tomcat.version"] = "10.1.55"
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")

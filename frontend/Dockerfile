@@ -37,7 +37,12 @@ ENV VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID
 RUN npm run build
 
 # ===== Etapa 2: Runtime (Nginx sirviendo el build estatico) =====
-FROM nginx:alpine
+# "alpine-slim" (no "alpine" a secas): la imagen "nginx:alpine" completa incluye por
+# defecto modulos dinamicos que este proyecto no usa (xslt, geoip, image-filter, njs,
+# acme) mas curl/ca-certificates - eso por si solo pesa ~92MB, mas que el objetivo
+# completo de <50MB del ticket. "alpine-slim" es el mismo nginx sin esos modulos extra
+# (~22MB base) - unico cambio necesario, nginx.conf no referencia ninguno de ellos.
+FROM nginx:alpine-slim
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 

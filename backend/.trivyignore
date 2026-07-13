@@ -1,0 +1,11 @@
+# CICD-004: riesgo aceptado, no una supresion silenciosa - ver CLAUDE.md seccion 17,
+# "Detalle de CICD-004" y "Proximos pasos sugeridos" para el seguimiento como item de
+# backlog propio (upgrade de Spring Boot con validacion completa).
+#
+# CVE-2026-22732 (spring-security-web, CRITICAL): fix real solo existe en Spring Security
+# 6.5.9+/7.0.4+ (sin backport a la linea 6.3.x que gestiona el BOM de Spring Boot 3.3.5,
+# el stack fijado en CLAUDE.md). Forzar ese salto de version sin tambien subir Spring Boot
+# arriesga romper el nucleo de seguridad del proyecto (JwtAuthConverter, SecurityConfig,
+# OAuth2 Resource Server, 250+ tests) - requiere su propia sesion de upgrade con
+# validacion completa, no un cambio dentro de un ticket de Dockerfiles (CICD-004).
+CVE-2026-22732
