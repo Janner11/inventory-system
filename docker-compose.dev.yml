@@ -272,7 +272,14 @@ services:
       - inventario-network
 
   grafana:
-    image: grafana/grafana:latest
+    # DOC-001: "latest" resolvia a un build muy reciente (APIs de "app platform"/alerting
+    # v0alpha1 nunca vistas antes en este proyecto) cuyo modulo de provisioning fallaba en
+    # duro con "Datasource provisioning error: data source not found" contra la misma
+    # config de datasources que ya funcionaba - crash-loop real encontrado verificando el
+    # quickstart del README. Pineado a una version estable, mismo criterio de
+    # reproducibilidad ya aplicado a Loki/Tempo/Alertmanager (ver README, seccion
+    # "Entorno de desarrollo local").
+    image: grafana/grafana:11.6.0
     container_name: inventario-grafana
     restart: unless-stopped
     environment:

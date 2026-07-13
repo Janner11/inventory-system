@@ -3,530 +3,326 @@
 [![CI](https://github.com/Janner11/inventory-system/actions/workflows/ci.yml/badge.svg)](https://github.com/Janner11/inventory-system/actions/workflows/ci.yml)
 [![Security Scan](https://github.com/Janner11/inventory-system/actions/workflows/security-scan.yml/badge.svg)](https://github.com/Janner11/inventory-system/actions/workflows/security-scan.yml)
 [![Performance Test](https://github.com/Janner11/inventory-system/actions/workflows/performance-test.yml/badge.svg)](https://github.com/Janner11/inventory-system/actions/workflows/performance-test.yml)
+[![Quality Gate](https://img.shields.io/badge/quality%20gate-passing%20(local)-brightgreen)](docs/cicd/sonarqube.md)
+[![Coverage](https://img.shields.io/badge/coverage-95%25%2B-brightgreen)](docs/cicd/sonarqube.md)
+[![Java](https://img.shields.io/badge/Java-21-orange)](backend/build.gradle.kts)
+[![React](https://img.shields.io/badge/React-18-61DAFB)](frontend/package.json)
+[![License](https://img.shields.io/badge/license-académico-lightgrey)](#licencia)
 
-Proyecto académico (PUCMM — Aseguramiento de Calidad de Software) para la gestión de
-inventarios de pequeñas empresas. Monorepo compuesto por un frontend en React (Vite) y
-un backend en Spring Boot 3 (Java 21), con autenticación vía Keycloak y observabilidad
-basada en el stack CNCF: Prometheus (métricas), Loki (logs), Tempo (trazas) y Grafana
-Alloy como colector OTLP central, todo visualizado en Grafana.
+> Los badges de **Quality Gate** y **Coverage** son estáticos (no hay un
+> servidor SonarQube/Codecov público y persistente para este proyecto
+> académico — SonarQube corre efímero por job de CI o localmente vía
+> `docker-compose.dev.yml`, ver [`docs/cicd/sonarqube.md`](docs/cicd/sonarqube.md)).
+> Reflejan la última verificación real documentada, no un estado en vivo.
 
-## Estructura del repositorio
+Sistema de gestión de inventarios para pequeñas empresas — desarrollado como
+proyecto académico para la asignatura **Aseguramiento de Calidad de
+Software** (PUCMM). Además de la funcionalidad de negocio (productos, stock,
+auditoría, reportes), el proyecto es una demostración completa de prácticas
+modernas de ingeniería: testing en 6 niveles, seguridad con autorización
+granular por scope, observabilidad de punta a punta (métricas + logs +
+trazas correlacionados) y dos pipelines CI/CD completos (GitHub Actions y
+Jenkins).
 
-```
-frontend/   → SPA en React + Vite
-backend/    → API REST en Spring Boot 3 (Java 21)
-observability/ → configuración de Prometheus, Alertmanager, Loki, Tempo, Alloy y Grafana
-scripts/    → scripts auxiliares (init de base de datos, etc.)
-keycloak/   → configuración/exportación del realm
-```
+## Índice
 
-## Entorno de desarrollo local (Docker Compose)
+- [Stack tecnológico](#stack-tecnológico)
+- [Arquitectura](#arquitectura)
+- [Requisitos previos](#requisitos-previos)
+- [Instalación y quickstart](#instalación-y-quickstart)
+- [Variables de entorno](#variables-de-entorno)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Comandos de desarrollo](#comandos-de-desarrollo)
+- [Testing](#testing)
+- [Observabilidad](#observabilidad)
+- [Seguridad](#seguridad)
+- [CI/CD](#cicd)
+- [Despliegue](#despliegue)
+- [Documentación adicional](#documentación-adicional)
+- [Contribución](#contribución)
+- [Licencia](#licencia)
 
-El archivo [`docker-compose.dev.yml`](docker-compose.dev.yml) levanta toda la
-infraestructura necesaria para el desarrollo local con un solo comando:
+## Stack tecnológico
 
-- **PostgreSQL 16** — base de datos de la aplicación y de Keycloak
-- **Keycloak 24** — Identity & Access Management (IAM)
-- **Backend** — API REST Spring Boot (build local desde `backend/Dockerfile`)
-- **Prometheus** — recolección de métricas: scrapea al backend (`/actuator/prometheus`),
-  al propio Alloy (self-monitoring del pipeline) y a cAdvisor (métricas por contenedor),
-  además de exponer el receptor `remote_write` que usa Alloy para reenviar las métricas OTLP
-- **cAdvisor** — métricas de CPU/RAM/red por contenedor (dashboard "Infraestructura", OBS-004)
-- **Alertmanager** — enrutamiento de alertas de Prometheus (reglas: OBS-005, pendiente)
-- **Loki** — almacenamiento de logs estructurados, con retención de 7 días y
-  límites de ingesta configurados (OBS-003, ver
-  [`docs/observability/loki-queries.md`](docs/observability/loki-queries.md))
-- **Tempo** — almacenamiento de trazas distribuidas
-- **Grafana Alloy** — colector OTLP central (gRPC 4317 / HTTP 4318) que enruta métricas
-  a Prometheus, trazas a Tempo y logs a Loki. El backend ya lo alimenta con datos reales
-  vía el OTel Java Agent (OBS-001) — ver "Pipeline de observabilidad (OBS-002)" abajo.
-- **Grafana** — dashboards y visualización (datasources de Prometheus/Loki/Tempo
-  provisionados automáticamente)
-
-Todos los servicios se conectan a través de la red `inventario-network` y persisten
-sus datos en volúmenes de Docker (`postgres_data`, `keycloak_data`, `prometheus_data`,
-`grafana_data`, `loki_data`, `tempo_data`, `alertmanager_data`).
-
-> **Nota de versiones:** Loki y Tempo están pineados a `2.9.6` / `2.6.1` (no `:latest`).
-> La serie 3.x más reciente de ambos cambia de forma incompatible el esquema de
-> configuración usado aquí (Tempo 3.x reescribe el pipeline hacia una arquitectura
-> basada en Kafka) y, en el caso de Loki, la imagen `:latest` no trae shell/`wget`,
-> lo que impide un `HEALTHCHECK` de Docker. Alertmanager está pineado a `v0.27.0` por
-> la misma razón de reproducibilidad.
-
-### Requisitos previos
-
-- Docker Desktop o Docker Engine
-- Docker Compose v2 (`docker compose`)
-
-### Pasos para levantar el entorno
-
-1. Copiar el archivo de variables de entorno de ejemplo:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Levantar todos los servicios:
-
-   ```bash
-   docker compose -f docker-compose.dev.yml up -d --build
-   ```
-
-3. Verificar que todos los contenedores estén corriendo (y healthy donde aplique):
-
-   ```bash
-   docker compose -f docker-compose.dev.yml ps
-   ```
-
-4. Acceder a los servicios desde el navegador:
-
-   | Servicio | URL | Credenciales por defecto |
-   |----------|-----|---------------------------|
-   | Backend (API) | http://localhost:8081/api/ping | — |
-   | Backend (Actuator) | http://localhost:8081/actuator/health | — |
-   | Keycloak | http://localhost:8080 | `admin` / `admin` (consola admin) |
-   | Prometheus | http://localhost:9090 | — |
-   | cAdvisor | http://localhost:8085 | — |
-   | Alertmanager | http://localhost:9093 | — |
-   | Loki | http://localhost:3100/ready | — (se consulta desde Grafana Explore) |
-   | Tempo | http://localhost:3200/status | — (se consulta desde Grafana Explore) |
-   | Grafana Alloy (UI) | http://localhost:12345 | — |
-   | Grafana | http://localhost:3000 | `admin` / `admin` |
-
-### Keycloak — realm `inventario` (SEC-001)
-
-El realm `inventario` se importa automáticamente al levantar Keycloak desde
-[`keycloak/realm.json`](keycloak/realm.json) (flag `--import-realm`). Incluye:
-
-- **Clients:** `inventario-frontend` (público, PKCE, redirect `http://localhost:5173/*`)
-  y `inventario-backend` (confidencial, secret de dev `inventario-backend-secret`,
-  `directAccessGrantsEnabled=true` para pruebas con `curl`).
-- **Scopes (client roles en `inventario-backend`):** `product:view`, `product:manage`,
-  `stock:view`, `stock:manage`, `report:view`, `user:manage`, `audit:view`.
-- **Roles de realm (composite, combinan los scopes anteriores):** `ADMIN`, `MANAGER`,
-  `WAREHOUSE`, `VIEWER`, `AUDITOR` — ver matriz de permisos completa en `CLAUDE.md`
-  (sección 6). Keycloak expande los roles composite al generar el JWT, por lo que
-  `resource_access.inventario-backend.roles` siempre contiene los scopes resueltos
-  (verificado con `curl` para los 5 usuarios de prueba).
-- **Usuarios de prueba:**
-
-  | Usuario | Password | Rol de realm | Scopes resueltos en el JWT |
-  |---------|----------|---------------|------------------------------|
-  | `admin@test.com` | `admin123` | `ADMIN` | los 7 scopes |
-  | `manager@test.com` | `manager123` | `MANAGER` | `product:view`, `product:manage`, `stock:view`, `stock:manage`, `report:view` |
-  | `warehouse@test.com` | `warehouse123` | `WAREHOUSE` | `product:view`, `stock:view`, `stock:manage` |
-  | `viewer@test.com` | `viewer123` | `VIEWER` | `product:view`, `stock:view`, `report:view` |
-  | `auditor@test.com` | `auditor123` | `AUDITOR` | `audit:view`, `report:view` |
-
-> Nota: la importación de realm con `IGNORE_EXISTING` solo aplica una vez por
-> volumen. Si se modifica `keycloak/realm.json` y se quiere reimportar, hay que
-> recrear el volumen `keycloak_data` (`docker compose -f docker-compose.dev.yml down -v`
-> y volver a levantar).
-
-#### Obtener un token JWT (dev, sin frontend)
-
-```bash
-curl -s -X POST "http://localhost:8080/realms/inventario/protocol/openid-connect/token" \
-  -d "grant_type=password" \
-  -d "client_id=inventario-backend" \
-  -d "client_secret=inventario-backend-secret" \
-  -d "username=viewer@test.com" \
-  -d "password=viewer123"
-```
-
-#### Endpoints protegidos de prueba (SEC-002)
-
-```bash
-# Sin token → 401
-curl -i http://localhost:8081/api/ping/secure
-
-# Con token de admin@test.com o viewer@test.com (requiere scope product:view) → 200
-curl -i -H "Authorization: Bearer <ACCESS_TOKEN>" http://localhost:8081/api/ping/secure
-
-# Con token de admin@test.com (requiere scope product:manage) → 200
-curl -i -X POST -H "Authorization: Bearer <ACCESS_TOKEN_ADMIN>" http://localhost:8081/api/ping/manage
-
-# Con token de viewer@test.com (sin scope product:manage) → 403
-curl -i -X POST -H "Authorization: Bearer <ACCESS_TOKEN_VIEWER>" http://localhost:8081/api/ping/manage
-```
-
-### Auditoría — Hibernate Envers (BACK-003)
-
-La entidad `Product` está anotada con `@Audited`. Cada `INSERT`/`UPDATE`/`DELETE`
-genera una fila en `products_aud` (snapshot del producto en esa revisión) y una
-fila en `revinfo` (timestamp de la revisión). La migración
-[`V3__create_audit_tables.sql`](backend/src/main/resources/db/migration/V3__create_audit_tables.sql)
-crea ambas tablas.
-
-Para ver el historial de revisiones de un producto desde `psql`:
-
-```sql
-SELECT p.rev, r.revtstmp, p.sku, p.name, p.quantity, p.status,
-       CASE p.revtype WHEN 0 THEN 'ADD' WHEN 1 THEN 'MOD' WHEN 2 THEN 'DEL' END AS revision_type
-FROM products_aud p
-JOIN revinfo r ON r.rev = p.rev
-WHERE p.id = '<PRODUCT_ID>'
-ORDER BY p.rev;
-```
-
-**Endpoint de auditoría (BACK-007)**: `GET /api/audit/products/{id}/revisions`
-(scope `product:view`) expone el mismo historial vía API/Swagger, sin
-necesidad de `psql`. Devuelve un array con un snapshot del producto por cada
-revisión (`revisionNumber`, `revisionTimestamp`, `revisionType` ADD/MOD/DEL y
-los campos del producto en esa revisión). Responde 404 si el producto no
-tiene historial de auditoría.
-
-```bash
-curl -H "Authorization: Bearer <ACCESS_TOKEN>" \
-  http://localhost:8081/api/audit/products/<PRODUCT_ID>/revisions
-```
-
-5. Para detener y eliminar los contenedores (los datos persisten en los volúmenes):
-
-   ```bash
-   docker compose -f docker-compose.dev.yml down
-   ```
-
-   Para eliminar también los volúmenes (reinicio completo de datos):
-
-   ```bash
-   docker compose -f docker-compose.dev.yml down -v
-   ```
-
-### Integration Testing — Testcontainers (TEST-002)
-
-`backend/src/test/java/com/inventario/integration/` contiene **37 tests de
-integración**, cada uno contra una base de datos PostgreSQL real levantada
-vía Testcontainers (no H2 ni mocks de repositorio):
-
-| Clase | Tests | Qué prueba |
+| Capa | Tecnología | Versión |
 |---|---|---|
-| `ProductRepositoryIntegrationTest` | 14 | Queries de `ProductRepository` (paginación, filtros, unicidad de SKU, auditoría `createdAt`/`updatedAt`/`version`) contra Postgres real |
-| `StockMovementRepositoryIntegrationTest` | 8 | Queries de `StockMovementRepository` (historial paginado, top productos movidos) |
-| `SecurityIntegrationTest` | 7 | Flujo OAuth2 completo contra un **Keycloak real** (Testcontainers) — password grant real, validación de firma JWT vía JWKS real, extracción de scopes por `JwtAuthConverter`. Único test del proyecto que no mockea `JwtDecoder` |
-| `FlywayMigrationTest` | 3 | Las migraciones `V1`-`V7` se aplican en orden y sin errores sobre una base vacía |
-| `AuditServiceIntegrationTest` | 3 | `AuditService.getProductRevisions()` contra revisiones reales de Hibernate Envers |
-| `ProductAuditIntegrationTest` | 2 | Tablas `products_aud`/`revinfo` se pueblan correctamente al crear/editar un producto |
+| Frontend | React + Vite | React 18.3, Vite 5.4 |
+| | React Router DOM | 6.28 |
+| | TanStack Query (React Query) | 5.101 |
+| | React Hook Form | 7.79 |
+| | keycloak-js | 24.0 |
+| Backend | Spring Boot | 3.3.5 (Java 21) |
+| | Spring Security (OAuth2 Resource Server) | vía Spring Boot BOM |
+| | Spring Data JPA + Hibernate Envers | vía Spring Boot BOM |
+| | Flyway | vía Spring Boot BOM |
+| | springdoc-openapi (Swagger UI) | 2.6.0 |
+| Base de datos | PostgreSQL | 16 |
+| Identidad | Keycloak | 24 |
+| Testing | JUnit 5, Mockito, AssertJ, Testcontainers, RestAssured, Playwright, k6, JaCoCo | — |
+| Seguridad | OWASP ZAP, OWASP Dependency-Check, Trivy | — |
+| Observabilidad | OpenTelemetry Java Agent, Prometheus, Grafana Loki, Grafana Tempo, Grafana Alloy, Grafana, Alertmanager, cAdvisor | — |
+| DevOps | Docker, Docker Compose v2, GitHub Actions, Jenkins, SonarQube Community, GHCR | — |
 
-`SecurityIntegrationTest` es el único que también levanta un contenedor de
-Keycloak 24 (`keycloak/realm.json`, la misma fuente de verdad que usa
-`docker-compose.dev.yml` — copiada al classpath de test automáticamente por
-Gradle, sin duplicarla a mano). El resto de tests de integración usan
-`@MockBean JwtDecoder` o no pasan por la capa de seguridad.
+Sin frameworks de CSS (Tailwind/Bootstrap) — CSS puro con CSS Modules y
+design tokens (`frontend/src/styles/variables.css`), requisito explícito de
+la consigna académica.
 
-> **Nota (Windows/Docker Desktop):** el `KeycloakContainer` usa
-> `waitingFor(KeycloakContainer.LOG_WAIT_STRATEGY)` en vez del
-> `HttpWaitStrategy` por defecto — en este entorno el wait HTTP contra
-> `/health/started` falla intermitentemente con `SocketException: Unexpected
-> end of file from server` pese a que el contenedor arranca correctamente
-> (problema conocido de proxy de puertos de Docker Desktop, no del
-> contenedor). Esperar por el log de arranque es más confiable aquí.
+## Arquitectura
 
-```bash
-cd backend && ./gradlew test --tests "com.inventario.integration.*"
+Diagrama de componentes, modelo de datos, flujo de autenticación OAuth2
+PKCE y arquitectura de observabilidad — con diagramas Mermaid — en
+[`docs/architecture.md`](docs/architecture.md).
+
+```mermaid
+flowchart LR
+    SPA["React SPA"] -- "OAuth2 PKCE" --> KC["Keycloak"]
+    SPA -- "Bearer JWT" --> API["Spring Boot API"]
+    API -- valida JWT --> KC
+    API --> PG[("PostgreSQL")]
+    API -. instrumentado .-> OTEL["OTel Agent"] --> ALLOY["Grafana Alloy"]
+    ALLOY --> PROM["Prometheus"] & LOKI["Loki"] & TEMPO["Tempo"]
+    PROM & LOKI & TEMPO --> GRAF["Grafana"]
 ```
 
-### API Testing — RestAssured (TEST-003)
+## Requisitos previos
 
-`backend/src/test/java/com/inventario/api/ProductApiTest.java` contiene
-**13 escenarios de API testing** con RestAssured contra un servidor HTTP real
-(`@SpringBootTest(webEnvironment = RANDOM_PORT)`) y una base de datos PostgreSQL
-levantada vía Testcontainers. No requiere Keycloak — el `JwtDecoder` se
-reemplaza con un mock que emite tokens controlados de admin
-(`product:view + product:manage`) y viewer (`product:view`).
+Para levantar todo vía Docker Compose (recomendado):
 
-| Tipo | Escenarios |
-|---|---|
-| Validación de permisos 401 | Sin token: `GET /products`, `POST /products`, `POST /stock/entry` |
-| Validación de permisos 403 | Scope insuficiente: `POST /products` (viewer), `PUT /products/{id}` (viewer), `POST /stock/entry` (viewer) |
-| Validación de errores | `POST /products` con body inválido → 400; `GET /products/{id}` inexistente → 404 |
-| Rutas exitosas | `GET /products` → 200; `POST /products` → 201; `GET /products/{id}` → 200; `PUT /products/{id}` → 200; `DELETE /products/{id}` → 204 |
+- **Docker Desktop** o Docker Engine + **Docker Compose v2** (`docker compose`, no `docker-compose`)
 
-```bash
-cd backend && ./gradlew test --tests "com.inventario.api.ProductApiTest"
-```
+Para desarrollo fuera de Docker (frontend en modo `npm run dev`, backend
+con `./gradlew`, o correr los tests localmente):
 
-### E2E Testing — Playwright (TEST-004)
+- **Node.js 20** (frontend)
+- **JDK 21** (backend — el proyecto usa el toolchain de Gradle, cualquier
+  distribución de JDK 21 sirve)
+- **Git**
 
-`frontend/tests/e2e/` contiene **7 escenarios E2E** con Playwright (Chromium) que verifican el flujo completo del usuario contra el stack real (frontend Vite + backend Spring Boot + Keycloak + PostgreSQL vía Docker).
-
-| Archivo | Escenarios |
-|---|---|
-| `auth.spec.js` | Login via Keycloak redirige a `/dashboard`; navbar/sidebar visibles post-login; logout regresa a `/` |
-| `products.spec.js` | Crear producto → aparece en lista; Editar producto → datos actualizados; Eliminar producto → desaparece de lista; Flujo CRUD completo (crear → leer → editar → eliminar) |
-
-**Requisitos previos para ejecutar:**
+## Instalación y quickstart
 
 ```bash
-# 1. Levantar el stack completo
-docker compose -f docker-compose.dev.yml up -d
+# 1. Clonar el repositorio
+git clone https://github.com/Janner11/inventory-system.git
+cd inventory-system
 
-# 2. Iniciar el frontend (en otra terminal)
-cd frontend && npm run dev
+# 2. Variables de entorno
+cp .env.example .env
 
-# 3. (Primera vez) Instalar browsers de Playwright
-cd frontend && npx playwright install chromium
-```
+# 3. Levantar toda la infraestructura + backend
+docker compose -f docker-compose.dev.yml up -d --build
 
-**Ejecutar los tests:**
+# 4. Verificar que todo esté saludable (puede tardar ~1 min en el primer arranque)
+docker compose -f docker-compose.dev.yml ps
 
-```bash
-cd frontend && npm run test:e2e
-```
-
-### Control de Stock (BACK-005)
-
-Cada entrada, salida o ajuste de stock de un producto genera un registro en
-`stock_movements` (migración
-[`V4__create_stock_movements_table.sql`](backend/src/main/resources/db/migration/V4__create_stock_movements_table.sql)),
-con FK a `products`. `StockService` expone tres operaciones:
-
-- **Entrada** (`type=ENTRY`): incrementa `quantity` del producto.
-- **Salida** (`type=EXIT`): decrementa `quantity`; si la cantidad solicitada
-  supera el stock disponible, lanza `InsufficientStockException` (422).
-- **Ajuste** (`type=ADJUSTMENT`): fija `quantity` a un valor absoluto (p. ej.
-  tras un conteo físico).
-
-En los tres casos se valida que el producto exista (404 si no) y esté
-`ACTIVE` (409 `ProductInactiveException` si está `INACTIVE`). Cada
-`StockMovement` guarda `previousQuantity`, `newQuantity` y `quantity` (delta)
-para mantener trazabilidad completa.
-
-**Alerta de stock bajo**: después de cada movimiento, si
-`product.quantity < product.minStock`, se emite un `log.warn(...)` con el SKU,
-nombre y cantidades del producto. Esta alerta queda disponible para que
-herramientas de observabilidad (p. ej. Loki/Grafana, BACK-008) la consuman más
-adelante.
-
-> Los endpoints REST `/api/stock/*` (controller) y los scopes `stock:view`/
-> `stock:manage` quedan fuera de este alcance — se implementarán en BACK-006 y
-> en la ampliación de seguridad correspondiente.
-
-### Frontend (React + Vite)
-
-Con el backend, Postgres y Keycloak corriendo vía
-`docker compose -f docker-compose.dev.yml up -d`, el frontend se ejecuta por
-fuera de Docker en modo desarrollo:
-
-```bash
+# 5. Levantar el frontend (fuera de Docker, en otra terminal)
 cd frontend
-cp .env.example .env   # ajustar solo si las URLs por defecto no aplican
+cp .env.example .env
 npm install
 npm run dev
 ```
 
-La SPA queda disponible en `http://localhost:5173/`. Desde ahí:
+Acceder a **http://localhost:5173**, iniciar sesión con
+`admin@test.com` / `admin123` (ver [Seguridad](#seguridad) para el resto de
+usuarios de prueba y sus permisos).
 
-- `/` (`HomePage`): página pública con botón "Iniciar sesión" (redirige a
-  Keycloak vía PKCE — SEC-003). Si ya hay sesión, redirige a `/dashboard`.
-- `/dashboard` y `/products`: rutas protegidas (`ProtectedRoute`), envueltas
-  en el layout principal (`AppShell`, FRONT-001):
-  - **Navbar** (arriba): nombre de la app, usuario autenticado
-    (`preferred_username`) y botón "Cerrar sesión".
-  - **Sidebar** (izquierda): enlaces a "Dashboard" y "Productos", con el
-    enlace activo resaltado (`NavLink`/`aria-current="page"`).
-  - `DashboardPage`: smoke-test de `GET /api/products` (SEC-003).
-  - `ProductsPage` (FRONT-003): lista de productos (`GET /api/products`)
-    con búsqueda por nombre/SKU, filtro por categoría, filtro "Solo stock
-    bajo" (`quantity < minStock`) y paginación — todo del lado del cliente
-    (ver nota más abajo). El formulario de creación/edición se implementa en
-    FRONT-004.
-- Cualquier otra ruta muestra `NotFoundPage` (404).
-
-### Módulo de Productos (FRONT-003 — Lista, Búsqueda, Filtros y Paginación)
-
-`ProductsPage` consume `GET /api/products` (vía `useProducts`, React Query)
-y aplica búsqueda, filtros y paginación **del lado del cliente**:
-
-- **Búsqueda**: por nombre o SKU (case-insensitive, coincidencia parcial).
-- **Filtros**: por categoría (`<select>` con las categorías presentes en los
-  productos) y "Solo stock bajo" (`quantity < minStock`, mismo criterio de
-  alerta de BACK-005).
-- **Paginación**: 5 productos por página, con controles "Anterior"/"Siguiente".
-
-> `GET /api/products` (BACK-003, avance — scope reducido) devuelve la lista
-> completa de productos `ACTIVE` sin paginación, orden ni filtros en el
-> servidor. Dado que el dataset de este avance es pequeño, búsqueda, filtros
-> y paginación se implementaron en el frontend sobre esa lista completa, sin
-> requerir cambios en el backend. Si el dataset creciera, estos mismos
-> controles deberían migrar a parámetros de query (`?q=&category=&page=&size=`)
-> resueltos por el backend — ver "Próximos pasos sugeridos".
-
-### Observabilidad (OBS-004 — 4 dashboards de Grafana)
-
-Con el stack levantado (`docker compose -f docker-compose.dev.yml up -d`),
-Grafana (`http://localhost:3000`, `admin`/`admin`) trae **provisionados
-automáticamente** los 4 dashboards que define la sección 10 del backlog
-(`observability/grafana/provisioning/dashboards/`), todos con `refresh: 10s`
-y sin configuración manual (provider `inventario`, `dashboards.yml`):
-
-- **Aplicación** (`inventario-backend`, "Inventario Backend"): el backend
-  expone métricas en `/actuator/prometheus` (Micrometer), scrapeadas cada
-  15s (job `inventario-backend`). Paneles: **Backend Up**, **HTTP Request
-  Rate**, **HTTP Error Rate**, **HTTP Latency p95** (requiere
-  `management.metrics.distribution.percentiles-histogram.http.server.requests=true`,
-  ya en `application.yml`), **JVM Heap Used**, **JVM Live Threads**,
-  **HikariCP Connections**.
-- **Infraestructura** (`inventario-infra`): métricas de CPU/RAM/red/disco
-  **por contenedor**, vía [cAdvisor](https://github.com/google/cadvisor)
-  (`gcr.io/cadvisor/cadvisor:v0.47.2`, job `cadvisor` en Prometheus).
-  Paneles: **Contenedores activos**, **CPU por contenedor**, **Memoria por
-  contenedor**, **Red recibida/enviada por contenedor**, **Disco usado por
-  contenedor** — uno por cada uno de los 10 servicios del stack.
-- **Negocio** (`inventario-business`): métricas custom de Micrometer
-  expuestas por `config/BusinessMetricsConfig.java` junto con las técnicas
-  en `/actuator/prometheus` (sin endpoint nuevo): `products` (por status),
-  `products_critical` (bajo stock mínimo), `inventory_value` (precio ×
-  cantidad del inventario activo) y `stock_movements` (histórico, por
-  tipo ENTRY/EXIT/ADJUSTMENT). Paneles: **Productos activos**, **Productos
-  en alerta**, **Valor total del inventario**, **Movimientos de stock por
-  tipo**, **Tasa de movimientos por minuto**, **Productos por status**.
-- **Seguridad** (`inventario-security`): derivada de
-  `http_server_requests_seconds_count{status=~"401|403"}` (ya expuesta por
-  Micrometer, sin instrumentación nueva). Paneles: **Intentos fallidos
-  (401+403) última hora**, **Tasa de 401**, **Tasa de 403**, tabla de
-  **endpoints con más 401/403**.
-
-> Las 4 métricas de negocio son *gauges* recalculados contra la base de
-> datos en cada scrape de Prometheus (no *counters* incrementados en el
-> momento del evento) — Micrometer descarta automáticamente cualquier
-> sufijo `_total` en gauges (esa convención de Prometheus se reserva para
-> counters), por eso los nombres finales son `products`/`products_critical`/
-> `inventory_value`/`stock_movements` sin sufijo.
-
-### Trazas distribuidas y logs correlacionados (OBS-001)
-
-El backend corre instrumentado automáticamente por el
-[OpenTelemetry Java Agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation)
-(`-javaagent:/app/otel-javaagent.jar`, inyectado vía `JAVA_TOOL_OPTIONS` en el
-`Dockerfile`, sin cambios en el código de producción — ADR-006). Exporta
-trazas, métricas y logs por OTLP/gRPC a Grafana Alloy (`http://alloy:4317`,
-listo desde INFRA-003), que las enruta a Tempo, Prometheus y Loki
-respectivamente.
-
-- **Trazas**: cada request HTTP genera un trace visible en Tempo
-  (`http://localhost:3200`, o desde Grafana → Explore → datasource `Tempo`).
-- **Logs correlacionados**: la consola del backend (`docker logs inventario-backend`)
-  imprime `[traceId=...] [spanId=...]` en cada línea de log emitida dentro de
-  un request (vacío fuera de un span activo, ej. en el arranque) —
-  `logback-spring.xml` lee esos valores del MDC que el agente puebla
-  automáticamente. Desde Grafana → Explore → datasource `Loki`, cada log
-  tiene un botón "TraceID" (derived field) que salta directo a su trace en
-  Tempo. Más consultas LogQL de referencia en
-  [`docs/observability/loki-queries.md`](docs/observability/loki-queries.md).
-- **Métricas OTel**: además de las métricas de Micrometer que ya scrapea
-  Prometheus (`/actuator/prometheus`, OBS-004), el agente exporta sus propias
-  métricas de runtime JVM (`target_info`, `jvm_memory_*`, con label
-  `job="inventario-backend"` — coexisten con las de Micrometer sin colisionar
-  porque difieren en el label `instance`).
-
-> ⚠️ **Variable crítica**: `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` es obligatoria.
-> El SDK de OTel usa `http/protobuf` por defecto si no se especifica, pero el
-> receptor de Alloy en el puerto `4317` es grpc-only — sin esta variable el
-> agente falla en bucle con `Connection reset` al exportar. Ver "Detalle de
-> OBS-001" en `CLAUDE.md` para el diagnóstico completo.
-
-### Pipeline de observabilidad (OBS-002)
-
-La configuración de Prometheus y del colector Grafana Alloy (`observability/prometheus/prometheus.yml`,
-`observability/alloy/alloy-config.alloy`) es la pieza central que hace posible OBS-001:
-
-- **Alloy** recibe OTLP en `4317` (gRPC) / `4318` (HTTP) y enruta con un único
-  pipeline (`otelcol.receiver.otlp` → `otelcol.processor.batch`) hacia 3 exporters en
-  paralelo: `otelcol.exporter.prometheus` (vía `prometheus.remote_write` →
-  `http://prometheus:9090/api/v1/write`), `otelcol.exporter.otlp` (→ Tempo) y
-  `otelcol.exporter.loki` (→ Loki).
-- **Prometheus** habilita `--web.enable-remote-write-receiver` (requerido para recibir
-  el `remote_write` de Alloy) y scrapea 3 targets: `prometheus` (self), `inventario-backend`
-  (Micrometer, OBS-004) y **`alloy`** (`alloy:12345/metrics` — métricas propias del
-  colector: `alloy_component_*`, `otelcol_receiver_*`, `otelcol_exporter_*`).
-- El job `alloy` es **self-monitoring del pipeline de observabilidad**: permite
-  detectar en Prometheus si el colector está sano (`alloy_component_controller_running_components`),
-  si hay backlog en las colas de exportación (`otelcol_exporter_queue_size`) o si
-  algún exporter está fallando (`otelcol_exporter_*_failed`), sin depender de que las
-  trazas/logs/métricas de negocio lleguen correctamente a destino para notarlo.
-
-Verificación rápida con el stack levantado:
-
-```bash
-curl -s http://localhost:9090/api/v1/targets   # los 3 jobs en status "up"
-curl -s http://localhost:12345/metrics | head  # métricas crudas de Alloy
-```
-
-### CI/CD
-
-#### GitHub Actions (`.github/workflows/ci.yml`)
-
-Se ejecuta automáticamente en cada push a `develop` y en cada PR contra `develop`/`main`:
-
-| Job | Comando | Artefacto |
+| Servicio | URL | Credenciales |
 |---|---|---|
-| Build | `./gradlew build -x test` | — |
-| Unit Tests | `./gradlew test --tests "com.inventario.unit.*" jacocoTestReport` | Resultados XML + reporte JaCoCo |
-| Integration & API Tests | `./gradlew test --tests "com.inventario.integration.*" --tests "com.inventario.api.*"` | Resultados XML |
+| Frontend (SPA) | http://localhost:5173 | — |
+| Backend (API) | http://localhost:8081/api/ping | — |
+| Swagger UI | http://localhost:8081/swagger-ui/index.html | — |
+| Backend (Actuator) | http://localhost:8081/actuator/health | — |
+| Keycloak | http://localhost:8080 | `admin` / `admin` (consola admin) |
+| Grafana | http://localhost:3000 | `admin` / `admin` |
+| Prometheus | http://localhost:9090 | — |
+| Alertmanager | http://localhost:9093 | — |
+| Jenkins | http://localhost:8095 | ver `JENKINS_ADMIN_*` en `.env` |
+| SonarQube | http://localhost:9001 | `admin` / `admin` (primer login) |
 
-#### Jenkins (`Jenkinsfile`)
+Para detener todo: `docker compose -f docker-compose.dev.yml down` (agregar
+`-v` para también borrar los volúmenes de datos).
 
-Pipeline declarativo en la raíz del repositorio. Para usarlo en Jenkins:
+## Variables de entorno
 
-1. Crear un nuevo job de tipo **Pipeline** (o Multibranch Pipeline).
-2. En **Pipeline → Definition**: seleccionar *Pipeline script from SCM*.
-3. SCM: Git → URL del repositorio → Branch: `*/develop`.
-4. Script Path: `Jenkinsfile`.
-5. **Prerrequisitos del agente Jenkins:**
-   - JDK 21 configurado en *Manage Jenkins → Tools → JDK installations* con el nombre `JDK-21`.
-   - Docker daemon accesible desde el agente (necesario para Testcontainers y para el stage de Build Docker Image).
+Documentadas con valor de ejemplo en [`.env.example`](.env.example) (dev) y
+[`.env.staging.example`](.env.staging.example) (staging). Resumen de las
+más relevantes para levantar el proyecto:
 
-Stages del pipeline:
+| Variable | Descripción | Default (dev) |
+|---|---|---|
+| `POSTGRES_DB` / `_USER` / `_PASSWORD` | Base de datos de la aplicación | `inventario` / `inventario_user` / `inventario_pass` |
+| `KEYCLOAK_ADMIN` / `_ADMIN_PASSWORD` | Credenciales de la consola admin de Keycloak | `admin` / `admin` |
+| `KEYCLOAK_ISSUER_URI` | Issuer público del realm (debe coincidir con el `iss` del JWT) | `http://localhost:8080/realms/inventario` |
+| `KEYCLOAK_JWK_SET_URI` | JWKS interno (red Docker) usado por el backend para validar firmas | `http://keycloak:8080/.../certs` |
+| `KEYCLOAK_CLIENT_SECRET` | Secret del client confidencial `inventario-backend` | `inventario-backend-secret` (solo dev) |
+| `BACKEND_PORT` | Puerto del backend | `8081` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos por CORS | `http://localhost:5173` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `_PROTOCOL` | Endpoint del colector OTLP (Alloy) — protocolo debe ser `grpc` | `http://alloy:4317` / `grpc` |
+| `VITE_API_BASE_URL` | Base URL de la API que consume el frontend | `http://localhost:8081/api` |
+| `VITE_KEYCLOAK_*` | URL/realm/client ID de Keycloak para `keycloak-js` | ver `frontend/.env.example` |
+| `SONAR_TOKEN` / `SONAR_HOST_URL` | Opcionales — sin ellas, CI usa un SonarQube efímero | — |
+| `NVD_API_KEY` | Opcional — acelera las actualizaciones de OWASP Dependency-Check | — |
 
-| Stage | Descripción |
-|---|---|
-| Checkout | `checkout scm` + `chmod +x gradlew` |
-| Build | `./gradlew build -x test` |
-| Unit Tests | `./gradlew test --tests "com.inventario.unit.*" jacocoTestReport` |
-| Integration & API Tests | `./gradlew test --tests "com.inventario.integration.*" --tests "com.inventario.api.*"` |
-| Build Docker Image | `docker build -t inventario-backend:${BUILD_NUMBER}` |
+Ver también la sección 15 de `CLAUDE.md` (local) para el detalle exhaustivo
+por servicio, y [`docs/deployment.md`](docs/deployment.md) para
+`.env.staging`.
 
-Post (siempre): publica resultados JUnit (`backend/build/test-results/test/*.xml`), reporte de cobertura JaCoCo (HTML Publisher) y archiva el JAR (`backend/build/libs/*.jar`).
+## Estructura del proyecto
 
-### Dockerfiles optimizados (CICD-004)
-
-Ambas imágenes usan build multi-stage, corren como usuario no-root y exponen
-`HEALTHCHECK`. No se usan en `docker-compose.dev.yml` (ahí el frontend corre con
-`npm run dev`) — son el artefacto que consume el pipeline CI/CD y `docker-compose.staging.yml`
-(INFRA-004, pendiente).
-
-| Imagen | Build | Runtime | Tamaño (verificado) | Usuario |
-|---|---|---|---|---|
-| `backend/Dockerfile` | `eclipse-temurin:21-jdk-alpine` (Gradle `bootJar`) | `eclipse-temurin:21-jre-alpine` | ~271 MB | `spring` (no-root) |
-| `frontend/Dockerfile` | `node:20-alpine` (`npm ci` + `vite build`) | `nginx:alpine` (puerto **8080**, no 80 — un proceso no-root no puede bindear puertos <1024) | ~63 MB | `nginx` (no-root, reutiliza el usuario ya presente en la imagen base) |
-
-Build y verificación local:
-
-```bash
-docker build -t inventario-backend:dev ./backend
-docker build -t inventario-frontend:dev ./frontend
-
-docker run --rm -p 18080:8080 inventario-frontend:dev
-curl http://localhost:18080/healthz   # -> ok
+```
+inventory-system/
+├── frontend/                  → SPA React + Vite
+│   ├── src/
+│   │   ├── components/        → common/, layout/, dashboard/, products/, stock/
+│   │   ├── pages/              → una página por ruta
+│   │   ├── hooks/               → useAuth, useProducts, useStock, useDashboard (React Query)
+│   │   ├── services/            → axiosConfig.js, keycloak.js, *Service.js
+│   │   └── styles/               → variables.css (design tokens) + CSS Modules
+│   ├── tests/unit/             → Vitest + React Testing Library
+│   └── tests/e2e/               → Playwright
+├── backend/                   → API REST Spring Boot 3 (Java 21)
+│   └── src/main/java/com/inventario/
+│       ├── controller/ service/ repository/ entity/ dto/ mapper/
+│       ├── config/             → SecurityConfig, OpenAPIConfig, BusinessMetricsConfig
+│       ├── security/            → JwtAuthConverter y conversores de scopes
+│       └── audit/                → Hibernate Envers (autor de cada revisión)
+│   └── src/test/java/com/inventario/
+│       ├── unit/ integration/ api/
+├── keycloak/realm.json        → Realm completo exportado (reproducible, ADR-008)
+├── observability/             → Config de Prometheus, Alloy, Loki, Tempo, Alertmanager, Grafana
+├── jenkins/                    → Dockerfile + Configuration as Code del controlador Jenkins
+├── scripts/                    → wait-for-it.sh, start-staging.sh, seed-staging.sh, zap-report-gate.py
+├── tests/performance/          → Scripts k6 (load/stress/soak)
+├── docs/                       → Documentación técnica (ver abajo)
+├── docker-compose.dev.yml      → Entorno de desarrollo local (14 servicios)
+├── docker-compose.staging.yml  → Entorno de staging (imágenes publicadas, sin defaults de credenciales)
+├── Jenkinsfile                 → Pipeline declarativo (paridad con ci.yml)
+└── .github/workflows/          → ci.yml, security-scan.yml, performance-test.yml
 ```
 
-`frontend/nginx.conf` sirve el build estático (`dist/`) con fallback SPA
-(`try_files ... /index.html`, necesario para las rutas de React Router como
-`/products/:id/edit`) y expone `/healthz` para el `HEALTHCHECK`.
+## Comandos de desarrollo
 
-### Notas
+### Backend
 
-- El backend expone métricas en `/actuator/prometheus` (Micrometer) para que
-  Prometheus pueda scrapearlas. La lógica de negocio (Productos, Stock, Auditoría)
-  y la seguridad OAuth2 Resource Server (SEC-001/SEC-002) están completamente
-  implementadas — ver secciones anteriores para el detalle de cada módulo.
-- CORS está habilitado en `SecurityConfig` para los orígenes definidos en
-  `CORS_ALLOWED_ORIGINS` (por defecto `http://localhost:5173`, el frontend Vite).
-- Keycloak se inicia en modo `start-dev` con una base de datos propia (`keycloak`)
-  creada automáticamente dentro de la misma instancia de PostgreSQL (ver
-  `scripts/init-postgres/01-create-keycloak-db.sh`), y con `KC_HOSTNAME=localhost`
-  fijo para que el claim `iss` de los tokens sea siempre
-  `http://localhost:8080/realms/inventario`, sin importar si la petición al
-  endpoint de token viene del host o de otro contenedor de la red Docker.
+```bash
+cd backend
+./gradlew compileJava                       # compilar
+./gradlew bootRun                            # ejecutar (requiere Postgres/Keycloak arriba)
+./gradlew test                               # unit + integration + API (Testcontainers)
+./gradlew test --tests "com.inventario.unit.*"   # solo unit tests
+./gradlew test jacocoTestReport jacocoTestCoverageVerification   # + gate de cobertura
+./gradlew sonar                              # análisis SonarQube (requiere servidor, ver docs/cicd/sonarqube.md)
+./gradlew dependencyCheckAnalyze             # OWASP Dependency-Check
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm run dev          # servidor de desarrollo (puerto 5173)
+npm run build         # build de producción (dist/)
+npm run test           # unit tests (Vitest)
+npm run test:e2e        # E2E (Playwright, requiere el stack completo levantado)
+```
+
+### Docker / infraestructura
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build   # levantar todo
+docker compose -f docker-compose.dev.yml ps                # estado de los servicios
+docker compose -f docker-compose.dev.yml logs -f backend    # logs de un servicio
+docker compose -f docker-compose.dev.yml down -v              # detener y borrar volúmenes
+
+docker build -t inventario-backend:dev ./backend    # build de la imagen de producción
+docker build -t inventario-frontend:dev ./frontend
+```
+
+### Producción / staging
+
+```bash
+cp .env.staging.example .env.staging   # ajustar valores reales
+./scripts/start-staging.sh              # arranque secuencial completo (≈48s)
+```
+
+Ver [Despliegue](#despliegue).
+
+## Testing
+
+248 tests de backend (unit + integration + API), 62 tests unitarios de
+frontend, 54 tests E2E (Playwright × 2 browsers), 3 escenarios de
+performance (k6) y security scanning (ZAP, Dependency-Check, Trivy) —
+0 vulnerabilidades HIGH/CRITICAL sin justificar. Estrategia completa,
+comandos exactos y tabla de cada clase de test en
+[`docs/testing/testing-strategy.md`](docs/testing/testing-strategy.md).
+
+```bash
+cd backend && ./gradlew test          # 248 tests
+cd frontend && npm run test            # 62 tests
+cd frontend && npx playwright test      # 54 tests (requiere el stack levantado)
+```
+
+## Observabilidad
+
+Backend instrumentado automáticamente con el OpenTelemetry Java Agent (sin
+tocar código de producción) — métricas, logs y trazas correlacionados,
+visualizados en 4 dashboards de Grafana provisionados como código
+(Aplicación, Infraestructura, Negocio, Seguridad) con 5 reglas de alerta
+activas. Arquitectura completa, flujo de datos y guía de "dónde mirar según
+lo que se busca" en [`docs/observability/README.md`](docs/observability/README.md).
+
+## Seguridad
+
+Autorización granular por **scope individual** (nunca por rol genérico),
+OAuth2 Authorization Code + PKCE desde el frontend, 5 roles de realm
+(`ADMIN`/`MANAGER`/`WAREHOUSE`/`VIEWER`/`AUDITOR`) sobre 7 scopes. Realm
+completo, usuarios de prueba y cómo el backend valida cada JWT en
+[`docs/security/keycloak.md`](docs/security/keycloak.md).
+
+## CI/CD
+
+Dos pipelines en paridad completa (mismos comandos, mismo orden de stages):
+**GitHub Actions** (`.github/workflows/ci.yml`) y **Jenkins**
+(`Jenkinsfile`, controlador con Configuration as Code en `jenkins/`). Build
+→ unit tests → SonarQube → integration/API tests → build de imágenes Docker
+→ Trivy → deploy a staging → E2E → security scan → push a GHCR (solo en
+`main`). Detalle de cada stage, secrets requeridos y cómo reproducirlo
+localmente en `CONTRIBUTING.md`, [`docs/cicd/jenkins.md`](docs/cicd/jenkins.md)
+y [`docs/cicd/sonarqube.md`](docs/cicd/sonarqube.md).
+
+## Despliegue
+
+Staging real y verificado (`docker-compose.staging.yml`, arranque completo
+en 48s) más guía de producción basada en los mismos artefactos (este
+proyecto académico no tiene un entorno de producción persistente) en
+[`docs/deployment.md`](docs/deployment.md).
+
+## Documentación adicional
+
+| Documento | Contenido |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | Diagramas de arquitectura, modelo de datos, flujo de auth, ADRs |
+| [`docs/security/keycloak.md`](docs/security/keycloak.md) | Realm, scopes, roles, usuarios de prueba |
+| [`docs/observability/README.md`](docs/observability/README.md) | Stack de observabilidad, flujo de datos, [`loki-queries.md`](docs/observability/loki-queries.md), [`alerts.md`](docs/observability/alerts.md) |
+| [`docs/testing/testing-strategy.md`](docs/testing/testing-strategy.md) | Los 6 niveles de testing, comandos, dónde vive cada suite |
+| [`docs/testing/exploratory-testing-report.md`](docs/testing/exploratory-testing-report.md) | 3 sesiones de exploratory testing (SBTM) y hallazgos |
+| [`docs/deployment.md`](docs/deployment.md) | Staging y producción |
+| [`docs/staging.md`](docs/staging.md) | Detalle operativo del entorno de staging |
+| [`docs/performance.md`](docs/performance.md) | Resultados reales de los 3 escenarios de k6 |
+| [`docs/cicd/jenkins.md`](docs/cicd/jenkins.md) | Arquitectura del pipeline Jenkins |
+| [`docs/cicd/sonarqube.md`](docs/cicd/sonarqube.md) | Quality Gate, arranque, integración en CI |
+| `CONTRIBUTING.md` | Flujo de ramas, pipeline de CI, secrets |
+| `CLAUDE.md` *(local, no versionado)* | Historial completo de decisiones día a día por ticket |
+
+## Contribución
+
+Git Flow (`main`/`develop` protegidas, ramas `feat/*`/`fix/*`/`chore/*`) y
+[Conventional Commits](https://www.conventionalcommits.org/). Cada PR
+requiere al menos 1 aprobación y pasar el pipeline de CI (unit tests,
+SonarQube Quality Gate, integration/API tests, build de imágenes, Trivy).
+Ver [`CONTRIBUTING.md`](CONTRIBUTING.md) para el detalle completo, incluyendo
+cómo reproducir el pipeline localmente antes de abrir un PR.
+
+## Licencia
+
+Proyecto académico desarrollado para la asignatura Aseguramiento de Calidad
+de Software — Pontificia Universidad Católica Madre y Maestra (PUCMM). Sin
+licencia de código abierto formal; uso educativo.
