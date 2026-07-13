@@ -290,6 +290,36 @@ jobs:
             --build-arg VITE_KEYCLOAK_CLIENT_ID=inventario-frontend \
             -t "${{ steps.tags.outputs.frontend-image }}" frontend/
 
+      - name: Trivy — backend image (0 CRITICAL)
+        # CICD-004: gate real, no solo verificacion manual. Un CRITICAL conocido
+        # (CVE-2026-22732, spring-security-web) queda documentado como riesgo aceptado en
+        # backend/.trivyignore (ver CLAUDE.md, "Detalle de CICD-004") - todo lo demas
+        # bloquea el pipeline de verdad.
+        run: |
+          mkdir -p trivy-reports
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$(pwd)/backend/.trivyignore:/tmp/.trivyignore:ro" \
+            -v "$(pwd)/trivy-reports:/reports" \
+            aquasec/trivy image --severity CRITICAL --exit-code 1 \
+            --ignorefile /tmp/.trivyignore \
+            --format json --output /reports/backend-trivy.json \
+            "${{ steps.tags.outputs.backend-image }}"
+
+      - name: Trivy — frontend image (0 CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$(pwd)/trivy-reports:/reports" \
+            aquasec/trivy image --severity CRITICAL --exit-code 1 \
+            --format json --output /reports/frontend-trivy.json \
+            "${{ steps.tags.outputs.frontend-image }}"
+
+      - name: Upload Trivy reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-reports
+          path: trivy-reports/
+
       - name: Save images to a single tarball
         run: docker save -o /tmp/staging-images.tar "${{ steps.tags.outputs.backend-image }}" "${{ steps.tags.outputs.frontend-image }}"
 

@@ -90,6 +90,32 @@ pipeline {
             }
         }
 
+        stage('Trivy Scan') {
+            // CICD-004: gate real (no solo verificacion manual), antes de desplegar las
+            // imagenes a staging - mismo criterio/orden que el job "docker-build" de
+            // ci.yml (CICD-001). El unico CRITICAL conocido (CVE-2026-22732,
+            // spring-security-web) queda documentado como riesgo aceptado en
+            // backend/.trivyignore (ver CLAUDE.md, "Detalle de CICD-004") - todo lo demas
+            // bloquea el pipeline de verdad, igual que en GitHub Actions.
+            steps {
+                sh '''
+                    mkdir -p trivy-reports
+                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                      -v "$(pwd)/backend/.trivyignore:/tmp/.trivyignore:ro" \
+                      -v "$(pwd)/trivy-reports:/reports" \
+                      aquasec/trivy image --severity CRITICAL --exit-code 1 \
+                      --ignorefile /tmp/.trivyignore \
+                      --format json --output /reports/backend-trivy.json \
+                      "${BACKEND_IMAGE}"
+                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                      -v "$(pwd)/trivy-reports:/reports" \
+                      aquasec/trivy image --severity CRITICAL --exit-code 1 \
+                      --format json --output /reports/frontend-trivy.json \
+                      "${FRONTEND_IMAGE}"
+                '''
+            }
+        }
+
         stage('Deploy Staging') {
             // docker-compose.staging.yml (INFRA-004) real - mismo mecanismo que el job
             // "staging-e2e-security" de ci.yml: .env.staging generado desde el .example
@@ -304,6 +330,6 @@ def publishReports() {
         reportName           : 'Reporte de Seguridad (OWASP ZAP)'
     ])
 
-    archiveArtifacts artifacts: 'backend/build/libs/*.jar, zap-reports/*.xml',
+    archiveArtifacts artifacts: 'backend/build/libs/*.jar, zap-reports/*.xml, trivy-reports/*.json',
                      allowEmptyArchive: true
 }
