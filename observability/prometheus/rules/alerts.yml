@@ -1,0 +1,98 @@
+# OBS-005: reglas de alerta de Prometheus.
+#
+# Las 5 alertas requeridas por el ticket. Cada `expr` usa metricas que ya estan
+# expuestas por el stack real (Micrometer/Actuator del backend, cAdvisor, y el
+# propio `up` de Prometheus) - ninguna requirio instrumentacion nueva, siguiendo
+# el mismo criterio ya aplicado en OBS-004 ("reutilizar metricas existentes en
+# vez de agregar instrumentacion cuando una metrica ya existente captura la
+# misma senal", ver CLAUDE.md seccion 17).
+#
+# Documentacion completa de umbrales y motivacion: docs/observability/alerts.md
+
+groups:
+  - name: inventario-backend-alerts
+    rules:
+      # 1. HighCPU: cpu_usage > 80% durante 5 minutos.
+      # `system_cpu_usage` es el gauge de Micrometer con el uso de CPU de todo el
+      # sistema operativo del contenedor (0.0-1.0), no solo el proceso Java -
+      # coincide con "cpu_usage" del ticket (a diferencia de `process_cpu_usage`,
+      # que solo mide el proceso JVM).
+      - alert: HighCPU
+        expr: system_cpu_usage{job="inventario-backend"} * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: inventario-backend
+        annotations:
+          summary: "Uso de CPU alto en {{ $labels.instance }}"
+          description: "El uso de CPU del sistema lleva más de 5 minutos por encima del 80% (actual: {{ printf \"%.1f\" $value }}%)."
+
+      # 2. HighErrorRate: proporcion de respuestas 5xx > 5% durante 2 minutos.
+      # División entre `rate()` de errores 5xx y `rate()` del total de requests
+      # en la misma ventana. Si no hay tráfico en la ventana, 0/0 = NaN y una
+      # comparación NaN > 5 es siempre falsa en PromQL (no dispara falsos
+      # positivos por falta de tráfico).
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{job="inventario-backend", status=~"5.."}[2m]))
+            /
+            sum(rate(http_server_requests_seconds_count{job="inventario-backend"}[2m]))
+          ) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          service: inventario-backend
+        annotations:
+          summary: "Tasa de errores HTTP elevada en inventario-backend"
+          description: "Más del 5% de las respuestas HTTP de los últimos 2 minutos son errores 5xx (actual: {{ printf \"%.1f\" $value }}%)."
+
+      # 3. HighLatency: p95 de latencia > 1000ms durante 3 minutos.
+      # `http_server_requests_seconds_bucket` está en segundos (convención de
+      # Micrometer); se multiplica por 1000 dentro del propio `expr` para que
+      # tanto el umbral (1000) como `$value` en la anotación queden en
+      # milisegundos, sin necesitar funciones de template no disponibles en
+      # Prometheus (a diferencia de Grafana/Loki, `mulByScalar` no existe aquí).
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_requests_seconds_bucket{job="inventario-backend"}[3m])) by (le)
+          ) * 1000 > 1000
+        for: 3m
+        labels:
+          severity: warning
+          service: inventario-backend
+        annotations:
+          summary: "Latencia p95 alta en inventario-backend"
+          description: "El percentil 95 de latencia HTTP lleva más de 3 minutos por encima de 1000ms (actual: {{ printf \"%.0f\" $value }}ms)."
+
+      # 4. ServiceDown: cualquier target de Prometheus caído (up == 0) durante 1 minuto.
+      # Sin filtro de `job` a propósito - cubre los 4 scrape jobs actuales
+      # (prometheus, inventario-backend, alloy, cadvisor) y cualquiera que se
+      # agregue en el futuro sin tener que tocar esta regla (sección 3, OBS-002).
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "El servicio {{ $labels.job }} no responde"
+          description: "Prometheus no puede scrapear el target {{ $labels.instance }} (job={{ $labels.job }}) desde hace más de 1 minuto."
+
+      # 5. AuthFailures: más de 10 fallos de autenticación/autorización por minuto.
+      # No existe un contador dedicado `auth_failures_total` en el backend (no se
+      # agregó instrumentación nueva para este ticket) - se deriva del conteo de
+      # respuestas 401 (token ausente/inválido) y 403 (scope insuficiente) sobre
+      # `/api/**`, la misma métrica que ya usa el dashboard "Seguridad" de OBS-004
+      # (`http_server_requests_seconds_count{status=~"401|403"}`, ver CLAUDE.md).
+      - alert: AuthFailures
+        expr: |
+          sum(increase(http_server_requests_seconds_count{job="inventario-backend", status=~"401|403", uri=~"/api/.*"}[1m])) > 10
+        for: 1m
+        labels:
+          severity: warning
+          service: inventario-backend
+        annotations:
+          summary: "Muchos fallos de autenticación/autorización en inventario-backend"
+          description: "Más de 10 respuestas 401/403 en /api/** durante el último minuto (actual: {{ printf \"%.0f\" $value }})."

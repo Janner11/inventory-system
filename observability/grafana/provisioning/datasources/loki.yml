@@ -1,0 +1,19 @@
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      # OBS-001: los logs llegan a Loki como JSON estructurado via el exporter OTLP del
+      # OTel Java Agent (otelcol.exporter.loki en Alloy), no como texto plano de consola,
+      # asi que el campo es "traceid" en minuscula (convencion del exporter), no "traceId=".
+      # Verificado contra logs reales: {"body":"...","traceid":"<hex>","spanid":"<hex>",...}
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: '"traceid":"(\w+)"'
+          name: TraceID
+          url: "${__value.raw}"

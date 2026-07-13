@@ -1,0 +1,23 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+# OBS-005: receiver real "default" -> webhook local (observability/alertmanager/
+# webhook-receiver.py, servicio `alert-webhook-receiver` en docker-compose.dev.yml).
+# No hay integracion con Slack/email en este entorno de desarrollo (no hay
+# workspace de Slack ni servidor SMTP en el stack); un webhook local, offline y
+# committeado permite verificar de verdad "Alertmanager recibe alertas" (evidencia
+# real via `docker logs inventario-alert-webhook-receiver`) sin depender de un
+# servicio externo. Para produccion, esta seccion se reemplazaria por
+# `slack_configs`/`email_configs` reales.
+receivers:
+  - name: default
+    webhook_configs:
+      - url: "http://alert-webhook-receiver:5001/alert"
+        send_resolved: true

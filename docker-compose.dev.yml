@@ -10,6 +10,14 @@ volumes:
   keycloak_data:
   prometheus_data:
   grafana_data:
+  loki_data:
+  tempo_data:
+  alertmanager_data:
+  jenkins_home:
+  sonarqube_db_data:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
 
 services:
   postgres:
@@ -86,12 +94,27 @@ services:
       KEYCLOAK_JWK_SET_URI: ${KEYCLOAK_JWK_SET_URI:-http://keycloak:8080/realms/inventario/protocol/openid-connect/certs}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      # OBS-001: instrumentacion automatica via OpenTelemetry Java Agent (JAVA_TOOL_OPTIONS
+      # ya fijado en el Dockerfile). Alloy expone su receptor OTLP en :4317 desde INFRA-003.
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-inventario-backend}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4317}
+      # El SDK/agente de OTel usa "http/protobuf" por defecto si no se especifica; el
+      # receptor otelcol.receiver.otlp de Alloy en :4317 es grpc-only, asi que hay que
+      # forzarlo explicitamente o el agente falla con "Connection reset" (ver Detalle de
+      # OBS-001 en CLAUDE.md).
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-grpc}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-otlp}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-otlp}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-otlp}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.version=1.0.0,deployment.environment=dev}
     ports:
       - "${BACKEND_PORT:-8081}:8081"
     depends_on:
       postgres:
         condition: service_healthy
       keycloak:
+        condition: service_started
+      alloy:
         condition: service_started
     networks:
       - inventario-network
@@ -100,16 +123,163 @@ services:
     image: prom/prometheus:latest
     container_name: inventario-prometheus
     restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      # Habilita el endpoint remote_write usado por Alloy para reenviar metricas OTLP
+      - "--web.enable-remote-write-receiver"
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     networks:
       - inventario-network
 
+  cadvisor:
+    # OBS-004 (dashboard "Infraestructura"): metricas de CPU/RAM/red por contenedor
+    # (container_cpu_usage_seconds_total, container_memory_usage_bytes,
+    # container_network_*_bytes_total), con label "name" = nombre del contenedor.
+    # La imagen trae su propio HEALTHCHECK (a diferencia de prometheus/grafana/alloy
+    # en este archivo, que no traen wget/curl/sh) - queda "healthy" automaticamente.
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: inventario-cadvisor
+    restart: unless-stopped
+    ports:
+      - "${CADVISOR_PORT:-8085}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - inventario-network
+
+  alertmanager:
+    # Pineado a v0.27.0 (en vez de :latest) por reproducibilidad, igual que loki/tempo abajo.
+    image: prom/alertmanager:v0.27.0
+    container_name: inventario-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:9093/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - inventario-network
+
+  # OBS-005: receptor local de webhooks para el receiver "default" de Alertmanager.
+  # No hay ningun servicio real de notificaciones (Slack/email) en este stack de
+  # desarrollo; este contenedor es el target real y committeado que permite verificar
+  # "Alertmanager recibe alertas" sin depender de un servicio externo (webhook.site
+  # o similar), imagen base minima (sin dependencias) montando el script como volumen.
+  alert-webhook-receiver:
+    image: python:3.12-alpine
+    container_name: inventario-alert-webhook-receiver
+    restart: unless-stopped
+    command: ["python3", "/app/webhook-receiver.py"]
+    volumes:
+      - ./observability/alertmanager/webhook-receiver.py:/app/webhook-receiver.py:ro
+    ports:
+      - "${ALERT_WEBHOOK_PORT:-5001}:5001"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - inventario-network
+
+  loki:
+    # Pineado a 2.9.6 (no :latest): la serie 3.x mas reciente cambia el esquema de
+    # storage/wal y ademas la imagen queda sin shell/wget, lo que impide un healthcheck
+    # CMD-SHELL. 2.9.x es la version estable y documentada de la serie usada en el resto
+    # del stack (Grafana Explore, provisioning) y sigue trayendo busybox (wget/sh).
+    image: grafana/loki:2.9.6
+    container_name: inventario-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - inventario-network
+
+  tempo:
+    # Pineado a 2.6.1: la serie 3.x reestructura el config (arquitectura basada en Kafka,
+    # backend-scheduler/backend-worker) y ya no acepta el esquema classic
+    # ingester/compactor/storage.trace.local usado aqui. 2.6.1 es la version estable,
+    # ampliamente documentada, con la que se implemento esta migracion.
+    image: grafana/tempo:2.6.1
+    container_name: inventario-tempo
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo-config.yml
+    volumes:
+      - ./observability/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "${TEMPO_PORT:-3200}:3200"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3200/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - inventario-network
+
+  alloy:
+    # Sin HEALTHCHECK de contenedor: la imagen grafana/alloy no incluye wget/curl (solo
+    # /usr/bin/sh), igual que prometheus/grafana en este mismo archivo. Su disponibilidad
+    # se valida manualmente vía la UI en :12345 (ver README).
+    image: grafana/alloy:latest
+    container_name: inventario-alloy
+    restart: unless-stopped
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - "/etc/alloy/config.alloy"
+    volumes:
+      - ./observability/alloy/alloy-config.alloy:/etc/alloy/config.alloy:ro
+    ports:
+      - "${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
+      - "${ALLOY_OTLP_HTTP_PORT:-4318}:4318"
+      - "${ALLOY_UI_PORT:-12345}:12345"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - inventario-network
+
   grafana:
-    image: grafana/grafana:latest
+    # DOC-001: "latest" resolvia a un build muy reciente (APIs de "app platform"/alerting
+    # v0alpha1 nunca vistas antes en este proyecto) cuyo modulo de provisioning fallaba en
+    # duro con "Datasource provisioning error: data source not found" contra la misma
+    # config de datasources que ya funcionaba - crash-loop real encontrado verificando el
+    # quickstart del README. Pineado a una version estable, mismo criterio de
+    # reproducibilidad ya aplicado a Loki/Tempo/Alertmanager (ver README, seccion
+    # "Entorno de desarrollo local").
+    image: grafana/grafana:11.6.0
     container_name: inventario-grafana
     restart: unless-stopped
     environment:
@@ -122,5 +292,155 @@ services:
       - "${GRAFANA_PORT:-3000}:3000"
     depends_on:
       - prometheus
+      - loki
+      - tempo
+    networks:
+      - inventario-network
+
+  # CICD-002: controlador Jenkins con plugins preinstalados (jenkins/Dockerfile) y
+  # Configuration as Code (jenkins/jenkins-casc.yml). Docker-outside-of-Docker via el
+  # socket del host montado abajo - el daemon real es el mismo que usa el resto de este
+  # docker-compose, no un daemon anidado. Puerto 8095 (no 8090) a proposito: el stage
+  # "Deploy Staging" del Jenkinsfile levanta docker-compose.staging.yml DENTRO de este
+  # mismo host Docker (Docker-outside-of-Docker, no un daemon anidado), y el frontend de
+  # staging ya usa el puerto 8090 por defecto (.env.staging.example) - un choque de
+  # puertos ahi rompería justo el stage que valida el entorno de staging.
+  jenkins:
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    image: inventario-jenkins:dev
+    container_name: inventario-jenkins
+    restart: unless-stopped
+    environment:
+      JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:-admin}
+      # Sin valor por defecto trivial a proposito (igual que las credenciales de
+      # docker-compose.staging.yml) - Jenkins es un panel de administracion real, no
+      # tiene sentido arrancarlo con una contrasena de ejemplo conocida.
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD}
+      JENKINS_URL: http://localhost:${JENKINS_PORT:-8095}/
+      GITHUB_USERNAME: ${GITHUB_USERNAME:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+      # Encontrado real durante la verificacion de CICD-002: Testcontainers (Integration
+      # Tests, TEST-002) intenta arrancar Ryuk (su sidecar de limpieza de recursos) y este
+      # a su vez intenta conectar de vuelta al proceso que lo lanzo usando la IP del
+      # bridge de Docker (172.17.0.1) - una direccion que no es alcanzable desde DENTRO
+      # del contenedor de Jenkins (Docker-outside-of-Docker: los contenedores que arranca
+      # Testcontainers son "hermanos" en el host real, no "hijos" en el namespace de red
+      # de Jenkins). Sin esto, los 4 archivos de test de integracion/API fallan con
+      # "Could not connect to Ryuk". Deshabilitar Ryuk es la mitigacion oficial y
+      # ampliamente usada para Testcontainers corriendo via Docker-outside-of-Docker; la
+      # limpieza de contenedores sigue ocurriendo via los shutdown hooks de la propia JVM
+      # (Testcontainers los registra igual), solo sin la garantia extra de Ryuk ante un
+      # JVM matado abruptamente - aceptable para un agente de Jenkins con builds
+      # controlados, no un entorno hostil.
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+      # Encontrado real (segundo problema de Testcontainers, distinto de Ryuk): incluso
+      # sin Ryuk, los tests seguian fallando con "java.net.ConnectException" al intentar
+      # conectarse a Postgres/Keycloak - Testcontainers, corriendo dentro del contenedor
+      # de Jenkins, intentaba usar "localhost:<puerto-publicado>" para hablarle al
+      # contenedor que el mismo acababa de arrancar, pero ese puerto esta publicado en el
+      # HOST real (Docker Desktop), no en el propio "localhost" DEL CONTENEDOR DE JENKINS.
+      # "host.docker.internal" es el nombre DNS especial de Docker Desktop que SI resuelve
+      # al host real desde cualquier contenedor - fuerza a Testcontainers a usarlo en vez
+      # de intentar auto-detectarlo.
+      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
+      # Encontrado real (Deploy Staging): en Docker Desktop para macOS, el daemon real
+      # (corriendo en la VM de Docker Desktop) solo puede resolver como bind mount una ruta
+      # que sea una ruta real de macOS ya compartida con esa VM (tipicamente cualquier cosa
+      # bajo /Users/...) - no una ruta que solo tiene sentido DENTRO del contenedor de
+      # Jenkins que hizo la llamada (ni "/var/jenkins_home/...", ni "/workspace-repo"),
+      # aunque ese contenedor SI vea archivos reales ahi via sus propios bind mounts. Por
+      # eso hace falta la ruta real de macOS explicita para que docker-compose.staging.yml
+      # (levantado desde DENTRO de Jenkins, Docker-outside-of-Docker) pueda resolver sus
+      # bind mounts relativos ("./observability/...") correctamente - ver Jenkinsfile,
+      # stage "Deploy Staging" (COMPOSE_PROJECT_DIR) y docs/cicd/jenkins.md. En un host
+      # Linux real (sin la capa de traduccion de Docker Desktop) este problema no existe:
+      # las rutas del contenedor y del daemon ya coinciden de forma natural.
+      HOST_WORKSPACE_ROOT: /Users/janner/Desktop/inventory-system/jenkins-workspace
+    ports:
+      - "${JENKINS_PORT:-8095}:8080"
+      - "${JENKINS_AGENT_PORT:-50000}:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Checkout local del propio repo (solo lectura) - el job Pipeline provisionado por
+      # JCasC (jenkins-casc.yml) lo usa como remoto "file:///workspace-repo" en vez de un
+      # webhook real de GitHub (ver "Casos de Error" del ticket y docs/cicd/jenkins.md).
+      - .:/workspace-repo:ro
+      # Encontrado real durante la verificacion de CICD-002: el workspace donde Jenkins
+      # hace checkout (dentro del volumen nombrado "jenkins_home" de arriba) no es una
+      # ruta real del host - es un volumen Docker gestionado internamente. Cualquier stage
+      # que le pase una ruta relativa/`$(pwd)` a un contenedor "hermano" via el socket de
+      # Docker montado (docker-compose.staging.yml, "docker run -v $(pwd)/...") falla,
+      # porque el daemon REAL del host no puede resolver una ruta que solo existe dentro
+      # del propio contenedor de Jenkins ("not a directory: Are you trying to mount a
+      # directory onto a file"). Fix estandar para Jenkins-en-Docker con
+      # Docker-outside-of-Docker: bind-montear el subdirectorio de workspaces a una ruta
+      # real del host, para que "$(pwd)" dentro de un build SIEMPRE sea una ruta que el
+      # daemon real tambien puede ver y montar.
+      - ./jenkins-workspace:/var/jenkins_home/workspace
+    networks:
+      - inventario-network
+
+  # CICD-003: base de datos DEDICADA para SonarQube - separada de "postgres" (la del
+  # backend) porque SonarQube exige ciertos ajustes de conexion propios (max_connections,
+  # extensiones) y para no acoplar el ciclo de vida de ambos datos.
+  sonarqube-db:
+    image: postgres:16
+    container_name: inventario-sonarqube-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SONARQUBE_DB:-sonarqube}
+      POSTGRES_USER: ${SONARQUBE_DB_USER:-sonarqube}
+      POSTGRES_PASSWORD: ${SONARQUBE_DB_PASSWORD:?debe definirse en .env, sin default trivial}
+    volumes:
+      - sonarqube_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SONARQUBE_DB_USER:-sonarqube} -d ${SONARQUBE_DB:-sonarqube}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - inventario-network
+
+  # CICD-003: sonarqube:lts-community (Alcance Tecnico del ticket). Elasticsearch
+  # embebido requiere vm.max_map_count >= 262144 en el host Docker (ya cumplido por
+  # defecto en Docker Desktop, verificado: exactamente 262144) y ulimits de memlock/nofile
+  # mas altos que el default - sin esto el contenedor crashea en el arranque con
+  # "max virtual memory areas vm.max_map_count [65530] is too low".
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: inventario-sonarqube
+    restart: unless-stopped
+    depends_on:
+      sonarqube-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/${SONARQUBE_DB:-sonarqube}
+      SONAR_JDBC_USERNAME: ${SONARQUBE_DB_USER:-sonarqube}
+      SONAR_JDBC_PASSWORD: ${SONARQUBE_DB_PASSWORD:?debe definirse en .env, sin default trivial}
+    ulimits:
+      nofile:
+        soft: 131072
+        hard: 131072
+      nproc: 8192
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    ports:
+      - "${SONARQUBE_PORT:-9001}:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
     networks:
       - inventario-network

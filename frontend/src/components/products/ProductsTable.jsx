@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useDeleteProduct } from '../../hooks/useProducts';
 import styles from '../../styles/products.module.css';
 
-export default function ProductsTable({ products }) {
+export default function ProductsTable({ products, canManage = false }) {
   const deleteMutation = useDeleteProduct();
 
   function handleDelete(id, name) {
@@ -51,17 +51,21 @@ export default function ProductsTable({ products }) {
                 <Link to={`/products/${product.id}`} className={styles.actionLink}>
                   Ver
                 </Link>
-                <Link to={`/products/${product.id}/edit`} className={styles.actionLink}>
-                  Editar
-                </Link>
-                <button
-                  type="button"
-                  className={styles.deleteButton}
-                  onClick={() => handleDelete(product.id, product.name)}
-                  disabled={deleteMutation.isPending}
-                >
-                  Eliminar
-                </button>
+                {canManage && (
+                  <>
+                    <Link to={`/products/${product.id}/edit`} className={styles.actionLink}>
+                      Editar
+                    </Link>
+                    <button
+                      type="button"
+                      className={styles.deleteButton}
+                      onClick={() => handleDelete(product.id, product.name)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      Eliminar
+                    </button>
+                  </>
+                )}
               </td>
             </tr>
           );

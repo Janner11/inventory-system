@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProductResponseDTO",
+  "type": "object",
+  "required": [
+    "id", "name", "sku", "category", "price", "quantity", "minStock",
+    "status", "createdAt", "updatedAt", "version"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "sku": { "type": "string" },
+    "description": { "type": ["string", "null"] },
+    "category": { "type": "string" },
+    "price": { "type": "number" },
+    "quantity": { "type": "integer" },
+    "minStock": { "type": "integer" },
+    "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+    "createdAt": { "type": "string" },
+    "updatedAt": { "type": "string" },
+    "createdBy": { "type": ["string", "null"] },
+    "version": { "type": "integer" }
+  }
+}

@@ -8,8 +8,13 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
+import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -51,7 +56,7 @@ public class Product {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private ProductStatus status;
+    private ProductStatus status = ProductStatus.ACTIVE;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -60,6 +65,27 @@ public class Product {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    // No auditado: es el mismo valor en todas las revisiones (no cambia con el
+    // tiempo), asi que registrarlo en products_aud (V3) seria redundante.
+    @NotAudited
+    @CreatedBy
+    @Column(name = "created_by", length = 150, updatable = false)
+    private String createdBy;
+
+    // Excluido automaticamente de la auditoria de Envers (los campos @Version
+    // son metadata de optimistic locking, no datos de negocio).
+    @Version
+    @Column(nullable = false)
+    private Long version;
+
+    @PrePersist
+    @PreUpdate
+    private void normalizeSku() {
+        if (sku != null) {
+            sku = sku.trim().toUpperCase();
+        }
+    }
 
     public UUID getId() {
         return id;
@@ -139,5 +165,13 @@ public class Product {
 
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public Long getVersion() {
+        return version;
     }
 }

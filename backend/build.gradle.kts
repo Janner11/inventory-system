@@ -3,6 +3,15 @@ plugins {
     jacoco
     id("org.springframework.boot") version "3.3.5"
     id("io.spring.dependency-management") version "1.1.6"
+    id("org.owasp.dependencycheck") version "12.2.2"
+    // CICD-001: plugin agregado para que el job "sonarqube" de ci.yml pueda correr
+    // `./gradlew sonar` de verdad. No hay ningun servidor SonarQube desplegado en este
+    // proyecto todavia (ni local ni remoto) - provisionar uno, definir el Quality Gate y
+    // hacer que bloquee el pipeline es el alcance completo de CICD-003 (ticket separado,
+    // "SonarQube integracion y quality gates", 5 SP). Sin `sonar.host.url`/`SONAR_TOKEN`
+    // configurados, el job de CI detecta la ausencia del secret y omite este paso en vez
+    // de fallar - el plugin en si es inerte hasta que se invoca la tarea `sonar`.
+    id("org.sonarqube") version "5.1.0.4882"
 }
 
 group = "com.inventario"
@@ -20,6 +29,14 @@ val mapstructVersion = "1.5.5.Final"
 repositories {
     mavenCentral()
 }
+
+// CICD-004: Trivy encontro 3 CVE CRITICAL reales en tomcat-embed-core 10.1.31 (version
+// gestionada por el BOM de Spring Boot 3.3.5) - CVE-2025-24813, CVE-2026-41293,
+// CVE-2026-43512, CVE-2026-43515. Se sobreescribe solo esta propiedad del BOM (mecanismo
+// estandar de Spring Boot/Maven, "tomcat.version") a un patch dentro de la misma linea
+// 10.1.x (API estable entre patches) en vez de saltar de linea de Spring Boot - build y
+// suite completa de tests verificados sin regresiones tras el cambio.
+extra["tomcat.version"] = "10.1.55"
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
@@ -50,9 +67,13 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
+    // TEST-002: Keycloak real en tests de integracion (SecurityIntegrationTest), en vez
+    // de mockear JwtDecoder como hacen los tests unitarios/api.
+    testImplementation("com.github.dasniko:testcontainers-keycloak:3.5.1")
     testCompileOnly("org.projectlombok:lombok")
     testAnnotationProcessor("org.projectlombok:lombok")
     testImplementation("io.rest-assured:rest-assured")
+    testImplementation("io.rest-assured:json-schema-validator")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -73,5 +94,76 @@ tasks.jacocoTestReport {
     reports {
         xml.required.set(true)
         html.required.set(true)
+    }
+}
+
+// TEST-002: copia keycloak/realm.json (fuente unica de verdad, ADR-008, ya usado por
+// docker-compose.dev.yml) al classpath de test en vez de duplicarlo a mano en
+// src/test/resources - asi SecurityIntegrationTest nunca puede quedar desincronizada
+// del realm real.
+val copyKeycloakRealmForTests by tasks.registering(Copy::class) {
+    from(rootProject.projectDir.parentFile.resolve("keycloak/realm.json"))
+    into(layout.buildDirectory.dir("resources/test/keycloak"))
+}
+
+tasks.processTestResources {
+    dependsOn(copyKeycloakRealmForTests)
+}
+
+// TEST-005: OWASP Dependency-Check (seccion 11 de CLAUDE.md ya lo listaba, sin implementar).
+// El ticket describia "pom.xml" (Maven) - este proyecto usa Gradle (sin pom.xml, sin Maven
+// en ningun lado del repo), mismo criterio de adaptacion ya usado en el resto del backlog
+// (TEST-003 "maven-failsafe-plugin" -> tareas de Gradle equivalentes).
+dependencyCheck {
+    // "Dependency Check sin vulnerabilidades CRITICAL" (validaciones del ticket) - CRITICAL
+    // en la escala CVSSv3 del NVD es >= 9.0.
+    failBuildOnCVSS = 9.0f
+    formats = listOf("HTML", "XML", "JSON")
+    setOutputDirectory(layout.buildDirectory.dir("reports/dependency-check").get().asFile)
+    suppressionFiles = listOf(rootProject.projectDir.resolve("dependency-check-suppressions.xml").path)
+
+    // Ruta fija dentro de build/ (en vez del default en el home del usuario) para poder
+    // cachearla entre corridas de CI (actions/cache, ver security-scan.yml).
+    data.directory = layout.buildDirectory.dir("dependency-check-data").get().asFile.absolutePath
+
+    // Sin NVD_API_KEY las actualizaciones de la base de datos del NVD son extremadamente
+    // lentas (rate limit publico) - ver .env.example / seccion 15 de CLAUDE.md. Con la
+    // variable seteada, se usa; sin ella, dependency-check sigue funcionando (mas lento).
+    System.getenv("NVD_API_KEY")?.let { nvd.apiKey = it }
+
+    // Solo las dependencias que realmente terminan en el artefacto desplegado - las de
+    // solo-test (Testcontainers, RestAssured, JUnit, etc.) no representan riesgo en
+    // produccion y solo agregan ruido/tiempo de escaneo.
+    scanConfigurations = listOf("runtimeClasspath")
+
+    analyzers {
+        // Analizadores para ecosistemas que este proyecto no usa (Node/.NET/Python/Ruby) -
+        // deshabilitarlos evita falsos positivos y acelera el analisis.
+        assemblyEnabled = false
+        nodeEnabled = false
+        nuspecEnabled = false
+        nugetconfEnabled = false
+    }
+}
+
+// CICD-001/CICD-003: configuracion del proyecto para el analisis Sonar (host/token se
+// pasan por linea de comandos o variables de entorno SONAR_HOST_URL/SONAR_TOKEN en
+// ci.yml/Jenkinsfile, no hardcodeados aqui). CICD-003 desplego el servidor real
+// (docker-compose.dev.yml, servicio "sonarqube") y configuro "Inventario Quality Gate"
+// (Coverage >= 70%, 0 new bugs, 0 new vulnerabilities, <= 10 new code smells,
+// duplicacion <= 3%) asignado al proyecto "inventario-backend" via API - ver
+// docs/cicd/sonarqube.md.
+sonar {
+    properties {
+        property("sonar.projectKey", "inventario-backend")
+        property("sonar.projectName", "Inventario Backend")
+        property("sonar.sources", "src/main/java")
+        property("sonar.tests", "src/test/java")
+        property("sonar.java.binaries", layout.buildDirectory.dir("classes/java/main").get().asFile.path)
+        property("sonar.coverage.jacoco.xmlReportPaths", layout.buildDirectory.dir("reports/jacoco/test/jacocoTestReport.xml").get().asFile.path)
+        // Paso 7 del ticket: bloquea la tarea "sonar" (y por lo tanto el pipeline) hasta
+        // que el servidor evalue el Quality Gate, fallando la build si no lo pasa - no
+        // solo sube el analisis y sigue de largo.
+        property("sonar.qualitygate.wait", "true")
     }
 }

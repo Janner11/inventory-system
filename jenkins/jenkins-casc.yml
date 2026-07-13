@@ -1,0 +1,75 @@
+# CICD-002: Configuration as Code (JCasC) - aplica automaticamente al arrancar
+# (CASC_JENKINS_CONFIG, ver Dockerfile), sin pasos manuales por el asistente de setup
+# ("Pasos de Implementacion" #2 del ticket). Valores sensibles vienen de variables de
+# entorno (JENKINS_ADMIN_PASSWORD, etc. - ver docker-compose.dev.yml/.env.example),
+# nunca hardcodeados aqui.
+jenkins:
+  systemMessage: "Inventario — Jenkins CI (CICD-002). Pipeline declarativo en Jenkinsfile, paridad con .github/workflows/ci.yml (CICD-001)."
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID:-admin}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+tool:
+  jdk:
+    installations:
+      - name: "JDK-21"
+        # Instalado directo en la imagen (jenkins/Dockerfile) - sin instalador
+        # automatico, evita depender de salida a internet en cada arranque de agente.
+        # Symlink de nombre fijo (independiente de arquitectura), ver JDK21_HOME ahi.
+        home: "/opt/jdk-21"
+
+# Credenciales referenciadas por el Jenkinsfile (withCredentials) - sin valor real
+# commiteado; se completan via variables de entorno del contenedor (docker-compose) o
+# manualmente en Manage Jenkins -> Credentials si no se usa CASC para esto. Ausentes por
+# defecto: los stages que las usan (Quality Gate/SonarQube) detectan su ausencia y se
+# omiten en vez de fallar, mismo patron que el job "sonarqube" de ci.yml (CICD-001).
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: "github-credentials"
+              username: "${GITHUB_USERNAME:-}"
+              password: "${GITHUB_TOKEN:-}"
+              description: "GitHub — checkout y status API (Pasos de Implementacion #6 del ticket)"
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              secret: "${SONAR_TOKEN:-}"
+              description: "SonarQube — token de analisis (CICD-003; servidor real en docker-compose.dev.yml, servicio 'sonarqube', alcanzable por nombre en la misma red Docker). Generar en http://localhost:9001 -> My Account -> Security -> Tokens y setear SONAR_TOKEN en .env. Vacio, el stage Quality Gate lo detecta ausente y se omite."
+
+unclassified:
+  location:
+    url: "${JENKINS_URL:-http://localhost:8090/}"
+
+# Job-DSL: provisiona automaticamente el Pipeline job apuntando a este mismo repo (sin
+# necesitar crear el Multibranch Pipeline a mano en la UI, "Pasos de Implementacion" #7
+# del ticket) - usa el checkout local del propio contenedor (montado como volumen, ver
+# docker-compose.dev.yml) via "file://", evitando depender de un webhook real de GitHub
+# alcanzable desde este entorno (ver "Casos de Error" del ticket y docs/cicd/jenkins.md).
+jobs:
+  - script: >
+      pipelineJob('inventario-pipeline') {
+        description('CICD-002 — Jenkinsfile declarativo, paridad con .github/workflows/ci.yml (CICD-001)')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///workspace-repo')
+                }
+                branch('*/feat/cicd-jenkins-pipeline')
+              }
+            }
+            scriptPath('Jenkinsfile')
+          }
+        }
+      }
