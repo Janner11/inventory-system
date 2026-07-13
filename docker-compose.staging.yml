@@ -295,7 +295,10 @@ services:
       - inventario-staging-network
 
   grafana:
-    image: grafana/grafana:latest
+    # DOC-001: pineado por el mismo motivo que docker-compose.dev.yml — "latest" resolvía
+    # a un build cuyo módulo de provisioning fallaba en duro contra la misma config de
+    # datasources que ya funcionaba.
+    image: grafana/grafana:11.6.0
     container_name: inventario-staging-grafana
     restart: unless-stopped
     environment:
