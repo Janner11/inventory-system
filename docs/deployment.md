@@ -1,9 +1,11 @@
 # Despliegue
 
-Cómo llevar este proyecto de "código en un PR" a "sistema corriendo" —
-staging (real, verificado end-to-end) y producción (guía basada en los
-mismos artefactos, ya que este es un proyecto académico sin un entorno de
-producción persistente).
+Cómo llevar este proyecto de "código en un PR" a "sistema corriendo" — los 3
+ambientes que exige la consigna (Development, Preview/Staging, Production),
+los 2 últimos verificados end-to-end contra el stack real, más una guía de
+lo que faltaría para un despliegue de producción real (TLS, dominio propio,
+secretos gestionados — no aplicable a un proyecto académico sin
+infraestructura persistente).
 
 ## Artefactos de despliegue
 
@@ -51,26 +53,70 @@ principal (`ci.yml`, job `staging-e2e-security`) — ver
 
 ## Producción
 
-Este proyecto es un trabajo académico (PUCMM, Aseguramiento de Calidad de
-Software) y **no tiene un entorno de producción real desplegado** — no hay
-dominio público, certificado TLS ni servidor persistente fuera de las
-máquinas de desarrollo/CI. Lo que sigue es la guía de cómo desplegarlo si
-existiera uno, usando exactamente los mismos artefactos que staging (mismas
-imágenes de GHCR, mismo `docker-compose.staging.yml` como plantilla) — no
-un pipeline ni una infraestructura distinta a mantener en paralelo.
+`docker-compose.production.yml` (INFRA-005) es el tercer ambiente que exige
+la consigna del proyecto (Development, Preview/Staging, Production) —
+replica la misma topología de 12 servicios que staging (INFRA-004), con su
+propio archivo de compose standalone, su propio rango de puertos y sin
+ninguna capacidad de sembrar datos de prueba.
+
+> **Sigue siendo un proyecto académico**: este ambiente corre en la misma
+> máquina que dev/staging (sin dominio público ni certificado TLS real) —
+> lo que existe de verdad es la **separación estructural** que pide la
+> consigna (compose file propio, credenciales propias, sin overlap de
+> puertos con los otros dos ambientes), no una infraestructura de
+> producción con TLS/secretos gestionados/base de datos administrada. Esas
+> siguen siendo guía, no implementación — ver la tabla de diferencias más
+> abajo, columna "Producción real (guía)".
+
+```bash
+cp .env.production.example .env.production
+# editar .env.production con valores reales (incluyendo KEYCLOAK_HOSTNAME/
+# KEYCLOAK_ISSUER_URI/CORS_ALLOWED_ORIGINS/VITE_* — el .example trae un
+# dominio simulado, inventario.example.com; para verificación local
+# sobreescribir con "localhost", igual que se hizo para verificar este
+# mismo archivo)
+
+./scripts/start-production.sh                  # usa las imágenes ya publicadas
+BUILD_LOCAL=true ./scripts/start-production.sh  # o construye desde el código local
+```
+
+**Verificado end-to-end** (2026-07-18, stack completo desde cero,
+`BUILD_LOCAL=true`): arranque de los 12 contenedores en 259s (incluye
+compilar el backend y construir la imagen del frontend localmente — con
+imágenes ya publicadas, como usa por defecto, es comparable a los 48s de
+staging); Flyway aplicó las 8 migraciones contra una base de datos nueva
+(`inventario_production`); `/actuator/health` del backend → `UP`;
+`/healthz` del frontend → `200`; **login OAuth2 PKCE real de punta a punta
+con Playwright** contra el Keycloak de este ambiente, redirigiendo a
+`/dashboard`; los 4 targets de Prometheus (`prometheus`, `inventario-backend`,
+`alloy`, `cadvisor`) en `up`; los 4 dashboards de Grafana cargando
+correctamente. **Sin datos de prueba**: el catálogo tras el arranque
+contiene únicamente el seed permanente de la migración `V8` (TEST-007, el
+mismo baseline que corre en dev/staging vía Flyway, no un artefacto de QA
+manual) — ninguna ruta de código en `start-production.sh` puede sembrar
+datos adicionales, a diferencia de `start-staging.sh` (`SEED=true`).
+
+Igual que con staging, `keycloak/realm.json` necesitó el origen del
+frontend de este ambiente (`http://localhost:8091`) agregado a
+`redirectUris`/`webOrigins` de `inventario-frontend` — mismo tipo de
+limitación ya conocida desde CICD-001 (staging tuvo el mismo problema con
+`localhost:8090`).
 
 ### Diferencias esperadas frente a staging
 
-| Aspecto | Staging (implementado) | Producción (guía) |
-|---|---|---|
-| TLS | HTTP plano (`10106` de ZAP, aceptado explícitamente en dev/staging) | Terminación TLS en un reverse proxy (nginx/Traefik) delante del `frontend` y del `backend` — no lo resuelve ningún Dockerfile de este proyecto |
-| Dominio | `localhost` fijo (`KC_HOSTNAME`, `redirectUris` de Keycloak) | Dominio real — requiere actualizar `KC_HOSTNAME`, `redirectUris`/`webOrigins` de `inventario-frontend` en `keycloak/realm.json`, y las 4 variables `VITE_*` como build-args del frontend (ver [`docs/security/keycloak.md`](security/keycloak.md)) |
-| Secrets | `.env.staging` con placeholders `CAMBIAR_*` | Gestor de secretos real (no un `.env` en disco) — Docker Secrets, Vault, o el mecanismo del proveedor cloud elegido |
-| Base de datos | Contenedor Postgres del mismo `docker-compose` | Servicio gestionado (backups automáticos, alta disponibilidad) fuera del `docker-compose` |
-| Réplicas / escalado | 1 instancia de cada servicio | Backend sin estado (JWT, sin sesión en servidor) — escalable horizontalmente detrás de un load balancer sin cambios de código |
-| Observabilidad | Alertmanager con un webhook local (`alert-webhook-receiver`, solo desarrollo) | `receivers` reales (Slack/email/PagerDuty) en `observability/alertmanager/alertmanager.yml` |
+| Aspecto | Staging (implementado) | Production, este proyecto (implementado) | Producción real (guía, no implementado) |
+|---|---|---|---|
+| Archivo de compose | `docker-compose.staging.yml` | `docker-compose.production.yml`, standalone | — |
+| Seed de datos de prueba | Opcional (`SEED=true` → `seed-staging.sh`) | Ninguna ruta de código lo permite | — |
+| Puertos de host | Rango propio (backend 8082, etc.) | Rango propio distinto (backend 8083, etc.) — los 3 ambientes corren a la vez sin colisión | — |
+| TLS | HTTP plano (`10106` de ZAP, aceptado explícitamente) | HTTP plano | Terminación TLS en un reverse proxy (nginx/Traefik) delante del `frontend` y del `backend` — no lo resuelve ningún Dockerfile de este proyecto |
+| Dominio | `localhost` fijo | `localhost` fijo (el `.example` sugiere un dominio simulado, pero la verificación real fue con `localhost`) | Dominio real — requiere actualizar `KC_HOSTNAME`, `redirectUris`/`webOrigins` de `inventario-frontend` en `keycloak/realm.json`, y las 4 variables `VITE_*` como build-args del frontend (ver [`docs/security/keycloak.md`](security/keycloak.md)) |
+| Secrets | `.env.staging` con placeholders `CAMBIAR_*` | `.env.production` con placeholders `CAMBIAR_*` | Gestor de secretos real (no un `.env` en disco) — Docker Secrets, Vault, o el mecanismo del proveedor cloud elegido |
+| Base de datos | Contenedor Postgres del mismo `docker-compose` | Contenedor Postgres del mismo `docker-compose` | Servicio gestionado (backups automáticos, alta disponibilidad) fuera del `docker-compose` |
+| Réplicas / escalado | 1 instancia de cada servicio | 1 instancia de cada servicio | Backend sin estado (JWT, sin sesión en servidor) — escalable horizontalmente detrás de un load balancer sin cambios de código |
+| Observabilidad | Alertmanager con un webhook local (`alert-webhook-receiver`, solo desarrollo) | Alertmanager con un webhook local (mismo mecanismo) | `receivers` reales (Slack/email/PagerDuty) en `observability/alertmanager/alertmanager.yml` |
 
-### Pasos (basados en el mismo mecanismo de staging)
+### Pasos para un despliegue real (más allá de este proyecto académico)
 
 1. Provisionar la infraestructura externa (dominio, TLS, gestor de secretos,
    base de datos gestionada si aplica).
@@ -82,12 +128,12 @@ un pipeline ni una infraestructura distinta a mantener en paralelo.
 4. Construir el frontend con los `--build-arg VITE_*` apuntando a las URLs
    reales de producción (`frontend/Dockerfile`, ARGs ya parametrizados desde
    TEST-005/CICD-004).
-5. Desplegar con una variante de `docker-compose.staging.yml` (o su
-   traducción a Kubernetes/ECS/lo que decida el equipo) con secrets reales,
-   sin ningún valor por defecto de desarrollo.
+5. Desplegar `docker-compose.production.yml` (o su traducción a
+   Kubernetes/ECS/lo que decida el equipo) con secrets reales en
+   `.env.production`, sin ningún valor por defecto de desarrollo.
 6. Verificar `/actuator/health` del backend y `/healthz` del frontend antes
-   de enrutar tráfico real (`scripts/wait-for-it.sh` ya implementa este
-   chequeo, reutilizable).
+   de enrutar tráfico real (`scripts/wait-for-it.sh`/`scripts/start-production.sh`
+   ya implementan este chequeo).
 7. Confirmar que Alertmanager tiene un `receiver` real configurado antes de
    considerar el despliegue "observado" — sin esto, las 5 alertas de
    Prometheus (OBS-005) se disparan pero nadie se entera.
