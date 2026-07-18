@@ -17,6 +17,11 @@ Los charters completos, con el paso a paso de cada sesión, están en estos arch
 > título, pasos, severidad y evidencia. Si más adelante se decide abrirlos, es copiar y
 > pegar.
 
+> **Actualización:** los 5 bugs de acá abajo (más un gap de infraestructura detectado por
+> separado, falta de un ambiente de Production real) ya se formalizaron como 6 tickets de
+> backlog listos para trabajarse, con alcance técnico/pasos/DoD completos — ver
+> [`hallazgos-test-008-tickets.md`](hallazgos-test-008-tickets.md).
+
 ## Resumen rápido
 
 | Charter | Cuánto duró | Bugs encontrados | Cosas que SÍ funcionaron bien |
@@ -41,7 +46,7 @@ positivos", no solo los bugs.
   puede verlo.
 - **Recomendación:** en un entorno real, que este endpoint solo esté disponible para el
   colector de Prometheus (red interna) o que pida autenticación.
-- **Estado:** Abierto.
+- **Estado:** Abierto — formalizado como [SEC-004](hallazgos-test-008-tickets.md#sec-004--restringir-acceso-no-autenticado-al-endpoint-actuatorprometheus).
 
 ### [MEDIUM] 2. No hay protección contra fuerza bruta en el login de Keycloak
 
@@ -50,7 +55,7 @@ positivos", no solo los bugs.
   devolvieron `401`, sin bloqueo ni delay. La cuenta aceptó el intento #11 con la
   contraseña buena sin chistar.
 - **Recomendación:** activar `"bruteForceProtected": true` en `keycloak/realm.json`.
-- **Estado:** Abierto.
+- **Estado:** Abierto — formalizado como [SEC-005](hallazgos-test-008-tickets.md#sec-005--activar-protección-contra-fuerza-bruta-en-el-realm-de-keycloak).
 
 ### [MEDIUM] 3. Un refresh token que ya rotó sigue siendo válido
 
@@ -59,7 +64,7 @@ positivos", no solo los bugs.
   usar el token A original. Me dio un 200 y un par de tokens nuevos, en lugar de
   rechazarlo.
 - **Recomendación:** agregar `"revokeRefreshToken": true` al realm.
-- **Estado:** Abierto.
+- **Estado:** Abierto — formalizado como [SEC-006](hallazgos-test-008-tickets.md#sec-006--revocar-refresh-tokens-ya-rotados-en-keycloak).
 
 ### [MEDIUM] 4. Mensaje de error súper confuso cuando un valor se pasa del límite (precio y `performedBy`)
 
@@ -77,7 +82,7 @@ positivos", no solo los bugs.
 - **Alcance:** el fallo con el precio se lo puede encontrar un usuario normal (un typo
   tonto). El de `performedBy` solo si alguien llama directo a la API.
 - **Recomendación:** poner las anotaciones que faltan en los tres campos.
-- **Estado:** Abierto.
+- **Estado:** Abierto — formalizado como [BACK-009](hallazgos-test-008-tickets.md#back-009--validaciones-de-rango-en-price-y-performedby).
 
 ### [LOW] 5. Desactivar un producto con stock no avisa de la cantidad que queda
 
@@ -85,7 +90,8 @@ positivos", no solo los bugs.
 - **Cómo lo vi:** desactivé un producto con 500 unidades en stock. El diálogo de
   confirmación solo decía "¿Eliminar el producto X?", sin mencionar la cantidad.
 - **Recomendación:** si se quiere mejorar, incluir el stock en el mensaje cuando sea > 0.
-- **Estado:** Abierto (es más una sugerencia de UX que un defecto funcional).
+- **Estado:** Abierto (es más una sugerencia de UX que un defecto funcional) — formalizado
+  como [FRONT-006](hallazgos-test-008-tickets.md#front-006--advertir-stock-disponible-al-desactivar-un-producto).
 
 ## Lo más bestia que confirmé como seguro: cero sobreventa con concurrencia real
 
@@ -136,3 +142,11 @@ código, los logs y reproduciéndolo con Playwright desde la UI real, no solo co
 
 Y para no dejar basura, todos los productos de prueba que creé en las tres sesiones los
 desactivé con soft-delete al terminar cada charter. El entorno local quedó limpio.
+
+## Un gap más, fuera de los 5 bugs
+
+Al formalizar el seguimiento de estos hallazgos también se detectó que el proyecto solo
+tiene 2 de los 3 ambientes que exige la consigna (Development y Preview/Staging, sin
+Production real) — no es un bug de comportamiento como los 5 de arriba, sino un gap de
+infraestructura. Quedó igual de formalizado como ticket:
+[INFRA-005](hallazgos-test-008-tickets.md#infra-005--crear-ambiente-de-production-real-y-separado-3er-ambiente-obligatorio).
