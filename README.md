@@ -143,9 +143,10 @@ Para detener todo: `docker compose -f docker-compose.dev.yml down` (agregar
 
 ## Variables de entorno
 
-Documentadas con valor de ejemplo en [`.env.example`](.env.example) (dev) y
-[`.env.staging.example`](.env.staging.example) (staging). Resumen de las
-más relevantes para levantar el proyecto:
+Documentadas con valor de ejemplo en [`.env.example`](.env.example) (dev),
+[`.env.staging.example`](.env.staging.example) (staging) y
+[`.env.production.example`](.env.production.example) (production). Resumen
+de las más relevantes para levantar el proyecto:
 
 | Variable | Descripción | Default (dev) |
 |---|---|---|
@@ -164,7 +165,7 @@ más relevantes para levantar el proyecto:
 
 Ver también la sección 15 de `CLAUDE.md` (local) para el detalle exhaustivo
 por servicio, y [`docs/deployment.md`](docs/deployment.md) para
-`.env.staging`.
+`.env.staging`/`.env.production`.
 
 ## Estructura del proyecto
 
@@ -190,11 +191,12 @@ inventory-system/
 ├── keycloak/realm.json        → Realm completo exportado (reproducible, ADR-008)
 ├── observability/             → Config de Prometheus, Alloy, Loki, Tempo, Alertmanager, Grafana
 ├── jenkins/                    → Dockerfile + Configuration as Code del controlador Jenkins
-├── scripts/                    → wait-for-it.sh, start-staging.sh, seed-staging.sh, zap-report-gate.py
+├── scripts/                    → wait-for-it.sh, start-staging.sh, start-production.sh, seed-staging.sh, zap-report-gate.py
 ├── tests/performance/          → Scripts k6 (load/stress/soak)
 ├── docs/                       → Documentación técnica (ver abajo)
 ├── docker-compose.dev.yml      → Entorno de desarrollo local (14 servicios)
 ├── docker-compose.staging.yml  → Entorno de staging (imágenes publicadas, sin defaults de credenciales)
+├── docker-compose.production.yml → Entorno de production (mismo esquema que staging, sin seed de datos)
 ├── Jenkinsfile                 → Pipeline declarativo (paridad con ci.yml)
 └── .github/workflows/          → ci.yml, security-scan.yml, performance-test.yml
 ```
@@ -236,11 +238,14 @@ docker build -t inventario-backend:dev ./backend    # build de la imagen de prod
 docker build -t inventario-frontend:dev ./frontend
 ```
 
-### Producción / staging
+### Staging / Production
 
 ```bash
-cp .env.staging.example .env.staging   # ajustar valores reales
-./scripts/start-staging.sh              # arranque secuencial completo (≈48s)
+cp .env.staging.example .env.staging      # ajustar valores reales
+./scripts/start-staging.sh                 # arranque secuencial completo (≈48s)
+
+cp .env.production.example .env.production # ajustar valores reales
+./scripts/start-production.sh               # mismo mecanismo, sin capacidad de seed
 ```
 
 Ver [Despliegue](#despliegue).
@@ -290,9 +295,11 @@ y [`docs/cicd/sonarqube.md`](docs/cicd/sonarqube.md).
 
 ## Despliegue
 
-Staging real y verificado (`docker-compose.staging.yml`, arranque completo
-en 48s) más guía de producción basada en los mismos artefactos (este
-proyecto académico no tiene un entorno de producción persistente) en
+Los 3 ambientes que exige la consigna — Development
+(`docker-compose.dev.yml`), Preview/Staging (`docker-compose.staging.yml`,
+arranque completo en 48s) y Production (`docker-compose.production.yml`,
+mismo esquema, sin capacidad de sembrar datos de prueba) —, los 2 últimos
+verificados end-to-end contra el stack real, en
 [`docs/deployment.md`](docs/deployment.md).
 
 ## Documentación adicional

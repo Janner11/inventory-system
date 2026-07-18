@@ -16,8 +16,8 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://localhost:5173/*", "http://localhost:8090/*"],
-      "webOrigins": ["http://localhost:5173", "http://localhost:8090"],
+      "redirectUris": ["http://localhost:5173/*", "http://localhost:8090/*", "http://localhost:8091/*"],
+      "webOrigins": ["http://localhost:5173", "http://localhost:8090", "http://localhost:8091"],
       "attributes": {
         "pkce.code.challenge.method": "S256"
       }

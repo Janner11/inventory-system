@@ -1,0 +1,315 @@
+name: inventario-production
+
+# INFRA-005: tercer ambiente (Development / Preview-Staging / Production) que exige la
+# consigna del proyecto — hoy solo existian docker-compose.dev.yml y
+# docker-compose.staging.yml (INFRA-004). Este archivo reutiliza la misma topologia ya
+# validada en staging (12 servicios, misma configuracion de observabilidad, mismo
+# realm.json de Keycloak, fuente unica de verdad — ADR-008) con las diferencias reales
+# que se esperan entre preview y produccion (ver docs/deployment.md, seccion
+# "Diferencias esperadas frente a staging" para el detalle completo de lo que sigue
+# siendo guia, no implementado — TLS, secretos gestionados, base de datos administrada):
+#   1. Sin seed de datos de prueba: a diferencia de scripts/start-staging.sh (que acepta
+#      SEED=true para correr scripts/seed-staging.sh), scripts/start-production.sh NO
+#      tiene ninguna ruta de codigo que sembre datos de prueba - no es una bandera que
+#      hay que recordar dejar en false, la capacidad no existe en este ambiente.
+#   2. Variables apuntando a un dominio/URL de produccion (aunque sea simulado,
+#      inventario.example.com) en vez de "localhost" fijo como en dev/staging - ver
+#      .env.production.example. Para verificacion local se sobreescribe con localhost
+#      en un .env.production no versionado, igual que se hizo con .env.staging.
+#   3. Rango de puertos de host distinto a dev Y a staging (backend 8083, Postgres 5435,
+#      etc. - ver .env.production.example) para poder levantar los 3 ambientes en la
+#      misma maquina sin colision de puertos durante verificacion local.
+#   4. `backend`/`frontend` usan `image:` (mismo artefacto ya construido y publicado en
+#      GHCR que consume staging, taggeado por commit - CICD-001/CICD-004), nunca
+#      `build:` local, igual que staging.
+#
+# Deliberadamente NO es un "docker compose -f staging.yml -f production.yml" (overlay):
+# la consigna pide "cada uno con su propio archivo de compose" (Criterios de Aceptacion
+# de INFRA-005) - este archivo es standalone, se levanta solo con
+# `docker compose -f docker-compose.production.yml up -d`.
+
+networks:
+  inventario-production-network:
+    name: inventario-production-network
+    driver: bridge
+
+volumes:
+  production_postgres_data:
+  production_keycloak_data:
+  production_prometheus_data:
+  production_grafana_data:
+  production_loki_data:
+  production_tempo_data:
+  production_alertmanager_data:
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: inventario-production-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT:-5435}:5432"
+    volumes:
+      - production_postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - inventario-production-network
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: inventario-production-keycloak
+    restart: unless-stopped
+    command: start-dev --health-enabled=true --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+      # Mismo mecanismo que staging (KC_HOSTNAME configurable, no fijo a "localhost"
+      # como en dev) - ver KEYCLOAK_HOSTNAME en .env.production.example.
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
+      KC_HOSTNAME_PORT: ${KEYCLOAK_PORT:-8280}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+    ports:
+      - "${KEYCLOAK_PORT:-8280}:8080"
+    volumes:
+      - production_keycloak_data:/opt/keycloak/data
+      - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - inventario-production-network
+
+  backend:
+    # Misma imagen publicada que staging (GHCR, taggeada por commit - CICD-001), nunca
+    # build local.
+    image: ${BACKEND_IMAGE}
+    container_name: inventario-production-backend
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8081
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI}
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/${KEYCLOAK_REALM:-inventario}/protocol/openid-connect/certs
+      SPRING_PROFILES_ACTIVE: production
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      OTEL_SERVICE_NAME: inventario-backend
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_RESOURCE_ATTRIBUTES: service.version=${VERSION},deployment.environment=production
+    ports:
+      - "${BACKEND_PORT:-8083}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      alloy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - inventario-production-network
+
+  frontend:
+    # Misma imagen publicada que staging; las variables VITE_* ya estan horneadas en el
+    # bundle desde el build (build-args, no env vars de runtime - ver frontend/Dockerfile).
+    image: ${FRONTEND_IMAGE}
+    container_name: inventario-production-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8091}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - inventario-production-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: inventario-production-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
+      - production_prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9092}:9090"
+    networks:
+      - inventario-production-network
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: inventario-production-cadvisor
+    restart: unless-stopped
+    ports:
+      - "${CADVISOR_PORT:-8087}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - inventario-production-network
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: inventario-production-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - production_alertmanager_data:/alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9095}:9093"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:9093/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - inventario-production-network
+
+  # OBS-005: igual que dev/staging, tampoco hay un servicio real de notificaciones
+  # (Slack/email/PagerDuty) en este proyecto academico - ver "Diferencias esperadas
+  # frente a staging" en docs/deployment.md (receivers reales quedan como guia).
+  alert-webhook-receiver:
+    image: python:3.12-alpine
+    container_name: inventario-production-alert-webhook-receiver
+    restart: unless-stopped
+    command: ["python3", "/app/webhook-receiver.py"]
+    volumes:
+      - ./observability/alertmanager/webhook-receiver.py:/app/webhook-receiver.py:ro
+    ports:
+      - "${ALERT_WEBHOOK_PORT:-5003}:5001"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - inventario-production-network
+
+  loki:
+    image: grafana/loki:2.9.6
+    container_name: inventario-production-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - production_loki_data:/loki
+    ports:
+      - "${LOKI_PORT:-3102}:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - inventario-production-network
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: inventario-production-tempo
+    restart: unless-stopped
+    command: -config.file=/etc/tempo/tempo-config.yml
+    volumes:
+      - ./observability/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - production_tempo_data:/var/tempo
+    ports:
+      - "${TEMPO_PORT:-3202}:3200"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3200/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - inventario-production-network
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: inventario-production-alloy
+    restart: unless-stopped
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - "/etc/alloy/config.alloy"
+    volumes:
+      - ./observability/alloy/alloy-config.alloy:/etc/alloy/config.alloy:ro
+    ports:
+      - "${ALLOY_OTLP_GRPC_PORT:-4517}:4317"
+      - "${ALLOY_OTLP_HTTP_PORT:-4518}:4318"
+      - "${ALLOY_UI_PORT:-12347}:12345"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - inventario-production-network
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: inventario-production-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - production_grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "${GRAFANA_PORT:-3002}:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - inventario-production-network
