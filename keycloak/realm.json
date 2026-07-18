@@ -5,6 +5,8 @@
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
   "clients": [
     {
       "clientId": "inventario-frontend",
