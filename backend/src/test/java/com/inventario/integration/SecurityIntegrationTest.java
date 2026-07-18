@@ -216,4 +216,47 @@ class SecurityIntegrationTest {
                 .when().get("http://localhost:" + port + "/actuator/health")
                 .then().statusCode(200);
     }
+
+    // SEC-005: 5 intentos fallidos consecutivos (failureFactor en realm.json) deben
+    // bloquear la cuenta temporalmente, incluso para la contrasena correcta - y sin
+    // afectar a otros usuarios. Se usa "manager@test.com" (no usado en ningun otro test
+    // de esta clase) para no interferir con los demas tests, que no garantizan orden de
+    // ejecucion entre si.
+    private void failedLoginAttempt(String username, String wrongPassword) {
+        given()
+                .baseUri(keycloak.getAuthServerUrl())
+                .basePath("")
+                .contentType(ContentType.URLENC)
+                .formParam("grant_type", "password")
+                .formParam("client_id", "inventario-backend")
+                .formParam("client_secret", "inventario-backend-secret")
+                .formParam("username", username)
+                .formParam("password", wrongPassword)
+                .when().post("/realms/inventario/protocol/openid-connect/token")
+                .then().statusCode(401);
+    }
+
+    @Test
+    void bruteForce_5IntentosFallidosBloqueanLaCuentaTemporalmente() {
+        for (int i = 0; i < 5; i++) {
+            failedLoginAttempt("manager@test.com", "contrasena-incorrecta-" + i);
+        }
+
+        // La cuenta queda bloqueada: incluso la contrasena CORRECTA es rechazada -
+        // confirma un bloqueo real, no solo "la contrasena sigue siendo incorrecta".
+        given()
+                .baseUri(keycloak.getAuthServerUrl())
+                .basePath("")
+                .contentType(ContentType.URLENC)
+                .formParam("grant_type", "password")
+                .formParam("client_id", "inventario-backend")
+                .formParam("client_secret", "inventario-backend-secret")
+                .formParam("username", "manager@test.com")
+                .formParam("password", "manager123")
+                .when().post("/realms/inventario/protocol/openid-connect/token")
+                .then().statusCode(401);
+
+        // El bloqueo es por usuario, no por realm: otro usuario sigue logueando normal.
+        realAccessToken("viewer@test.com", "viewer123");
+    }
 }
