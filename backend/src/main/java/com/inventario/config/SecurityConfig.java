@@ -53,7 +53,13 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/actuator/**", "/api/ping",
+                        // SEC-004: /actuator/prometheus expone metricas de negocio (inventory_value,
+                        // products_critical, stock_movements - OBS-004) y quedaba en el permitAll
+                        // generico de /actuator/**, accesible sin autenticacion. Solo ese endpoint
+                        // requiere el scope dedicado; /actuator/health se mantiene publico (lo
+                        // consumen los HEALTHCHECK de Docker, que no presentan token).
+                        .requestMatchers("/actuator/prometheus").hasAuthority("SCOPE_actuator:view")
+                        .requestMatchers("/actuator/health", "/actuator/info", "/api/ping",
                                 "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2

@@ -43,7 +43,8 @@ import static org.mockito.Mockito.when;
  * proveedor de identidad — mas rapido y determinista, a costa de no probar la validacion
  * de firma/issuer real (eso ya lo cubre SecurityIntegrationTest).
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "management.prometheus.metrics.export.enabled=true")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(JpaAuditingConfig.class)
 abstract class AbstractApiTest {
@@ -85,7 +86,7 @@ abstract class AbstractApiTest {
         when(jwtDecoder.decode(ADMIN_TOKEN))
                 .thenReturn(buildJwt(ADMIN_TOKEN, List.of(
                         "product:view", "product:manage", "stock:view", "stock:manage",
-                        "report:view", "user:manage", "audit:view")));
+                        "report:view", "user:manage", "audit:view", "actuator:view")));
         when(jwtDecoder.decode(VIEWER_TOKEN))
                 .thenReturn(buildJwt(VIEWER_TOKEN, List.of("product:view", "stock:view")));
         when(jwtDecoder.decode(WAREHOUSE_TOKEN))

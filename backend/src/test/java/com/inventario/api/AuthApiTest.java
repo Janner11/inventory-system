@@ -101,6 +101,31 @@ class AuthApiTest extends AbstractApiTest {
                 .then().statusCode(200);
     }
 
+    // SEC-004: /actuator/prometheus expone metricas de negocio (inventory_value,
+    // products_critical, stock_movements) y ya no debe ser publico como /actuator/health.
+    @Test
+    void actuatorPrometheus_sinToken_devuelve401() {
+        given()
+                .when().get("http://localhost:" + port + "/actuator/prometheus")
+                .then().statusCode(401);
+    }
+
+    @Test
+    void actuatorPrometheus_conScopeInsuficiente_devuelve403() {
+        given()
+                .header("Authorization", "Bearer " + VIEWER_TOKEN)
+                .when().get("http://localhost:" + port + "/actuator/prometheus")
+                .then().statusCode(403);
+    }
+
+    @Test
+    void actuatorPrometheus_conScopeCorrecto_devuelve200() {
+        given()
+                .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                .when().get("http://localhost:" + port + "/actuator/prometheus")
+                .then().statusCode(200);
+    }
+
     @Test
     void swaggerUi_esPublico() {
         given()

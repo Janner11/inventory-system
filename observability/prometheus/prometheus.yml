@@ -15,8 +15,19 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
+  # SEC-004: /actuator/prometheus ahora exige el scope "actuator:view" (antes publico,
+  # exponia metricas de negocio - inventory_value, products_critical, stock_movements,
+  # OBS-004 - sin autenticacion). Prometheus se autentica con client_credentials real
+  # contra Keycloak usando su soporte nativo de scrape con OAuth2 (>= 2.27), reutilizando
+  # el service account ya habilitado del client "inventario-backend" (mismo secret que
+  # el resto del proyecto usa para pruebas, keycloak/realm.json) en vez de crear un
+  # client dedicado solo para esto.
   - job_name: inventario-backend
     metrics_path: /actuator/prometheus
+    oauth2:
+      client_id: inventario-backend
+      client_secret: inventario-backend-secret
+      token_url: http://keycloak:8080/realms/inventario/protocol/openid-connect/token
     static_configs:
       - targets: ["backend:8081"]
 

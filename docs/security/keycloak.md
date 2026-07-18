@@ -70,6 +70,7 @@ genérico:
 | `report:view` | Dashboard/Reportes | `GET /api/dashboard/*`, `GET /api/reports/*` |
 | `audit:view` | Auditoría | `GET /api/audit/products/{id}/revisions` |
 | `user:manage` | Seguridad | Reservado — sin endpoint de gestión de usuarios en el backend todavía |
+| `actuator:view` | Observabilidad | `GET /actuator/prometheus` (SEC-004) — no es un endpoint de negocio, protege el scrape de métricas. Asignado a `ADMIN` y al service account de `inventario-backend` (Prometheus se autentica con `client_credentials`, no un usuario humano) |
 
 ## Roles de realm (composite)
 
@@ -82,7 +83,7 @@ resueltos sin necesitar asignar client roles directamente a cada usuario.
 
 | Rol | Scopes que agrega |
 |---|---|
-| `ADMIN` | los 7 scopes |
+| `ADMIN` | los 8 scopes |
 | `MANAGER` | `product:view`, `product:manage`, `stock:view`, `stock:manage`, `report:view` |
 | `WAREHOUSE` | `product:view`, `stock:view`, `stock:manage` |
 | `VIEWER` | `product:view`, `stock:view`, `report:view` |
