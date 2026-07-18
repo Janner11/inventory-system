@@ -278,8 +278,11 @@ lo que se busca" en [`docs/observability/README.md`](docs/observability/README.m
 
 Autorización granular por **scope individual** (nunca por rol genérico),
 OAuth2 Authorization Code + PKCE desde el frontend, 5 roles de realm
-(`ADMIN`/`MANAGER`/`WAREHOUSE`/`VIEWER`/`AUDITOR`) sobre 7 scopes. Realm
-completo, usuarios de prueba y cómo el backend valida cada JWT en
+(`ADMIN`/`MANAGER`/`WAREHOUSE`/`VIEWER`/`AUDITOR`) sobre 8 scopes —
+incluyendo `actuator:view` (SEC-004), que protege `/actuator/prometheus` y se
+asigna también al service account de `inventario-backend` para que Prometheus
+se autentique con `client_credentials` real. Realm completo, usuarios de
+prueba y cómo el backend valida cada JWT en
 [`docs/security/keycloak.md`](docs/security/keycloak.md).
 
 ## CI/CD

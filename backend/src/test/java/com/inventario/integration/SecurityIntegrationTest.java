@@ -19,6 +19,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.containsString;
 
 /**
  * A diferencia de {@code ProductApiTest} (api/) y los *ControllerTest (unit/), que
@@ -29,7 +30,13 @@ import static io.restassured.RestAssured.given;
  * {@code JwtAuthConverter}. Es el unico punto del proyecto que prueba esta cadena
  * de punta a punta (TEST-002).
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+// SEC-004: management.prometheus.metrics.export.enabled=true es necesario para que
+// /actuator/prometheus responda en @SpringBootTest - sin esto, PrometheusMeterRegistry
+// no se registra en el contexto de test (aunque si funciona normal en la app real) y el
+// endpoint responde 404 en vez de aplicar la regla de seguridad. Mismo fix que
+// AbstractApiTest (api/), encontrado al agregar el primer test que golpea este endpoint.
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "management.prometheus.metrics.export.enabled=true")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(JpaAuditingConfig.class)
 @Testcontainers
@@ -155,6 +162,58 @@ class SecurityIntegrationTest {
     void ping_endpointPublico_noRequiereToken() {
         given()
                 .when().get("/ping")
+                .then().statusCode(200);
+    }
+
+    // SEC-004: /actuator/prometheus ya no es publico (exponia inventory_value/
+    // products_critical/stock_movements sin autenticacion). El mecanismo real que usa
+    // Prometheus en produccion es client_credentials, no un usuario humano - se prueba
+    // exactamente ese flujo contra el Keycloak real, no un JWT construido a mano.
+    private String serviceAccountToken() {
+        return given()
+                .baseUri(keycloak.getAuthServerUrl())
+                .basePath("")
+                .contentType(ContentType.URLENC)
+                .formParam("grant_type", "client_credentials")
+                .formParam("client_id", "inventario-backend")
+                .formParam("client_secret", "inventario-backend-secret")
+                .when().post("/realms/inventario/protocol/openid-connect/token")
+                .then().statusCode(200)
+                .extract().path("access_token");
+    }
+
+    @Test
+    void actuatorPrometheus_sinToken_devuelve401() {
+        given()
+                .when().get("http://localhost:" + port + "/actuator/prometheus")
+                .then().statusCode(401);
+    }
+
+    @Test
+    void actuatorPrometheus_conTokenDeUsuarioSinScope_devuelve403() {
+        String token = realAccessToken("viewer@test.com", "viewer123");
+
+        given()
+                .header("Authorization", "Bearer " + token)
+                .when().get("http://localhost:" + port + "/actuator/prometheus")
+                .then().statusCode(403);
+    }
+
+    @Test
+    void actuatorPrometheus_conClientCredentialsReales_devuelve200() {
+        String token = serviceAccountToken();
+
+        given()
+                .header("Authorization", "Bearer " + token)
+                .when().get("http://localhost:" + port + "/actuator/prometheus")
+                .then().statusCode(200)
+                .body(containsString("jvm_memory_used_bytes"));
+    }
+
+    @Test
+    void actuatorHealth_siguePublico() {
+        given()
+                .when().get("http://localhost:" + port + "/actuator/health")
                 .then().statusCode(200);
     }
 }

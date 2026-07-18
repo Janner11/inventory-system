@@ -53,7 +53,8 @@
               "stock:manage",
               "report:view",
               "user:manage",
-              "audit:view"
+              "audit:view",
+              "actuator:view"
             ]
           }
         }
@@ -134,6 +135,10 @@
         {
           "name": "audit:view",
           "description": "Consultar historial de auditoria"
+        },
+        {
+          "name": "actuator:view",
+          "description": "Consultar endpoints de Actuator sensibles (metricas de negocio via /actuator/prometheus)"
         }
       ]
     }
@@ -218,6 +223,14 @@
         }
       ],
       "realmRoles": ["AUDITOR"]
+    },
+    {
+      "username": "service-account-inventario-backend",
+      "enabled": true,
+      "serviceAccountClientId": "inventario-backend",
+      "clientRoles": {
+        "inventario-backend": ["actuator:view"]
+      }
     }
   ]
 }
