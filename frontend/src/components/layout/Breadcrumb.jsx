@@ -8,6 +8,8 @@ const ROUTES = [
   { pattern: '/products/:id', crumbs: [{ label: 'Productos', to: '/products' }, { label: 'Detalle' }] },
   { pattern: '/products', crumbs: [{ label: 'Productos' }] },
   { pattern: '/stock', crumbs: [{ label: 'Stock' }] },
+  { pattern: '/audit', crumbs: [{ label: 'Auditoría' }] },
+  { pattern: '/reports', crumbs: [{ label: 'Reportes' }] },
 ];
 
 function resolveCrumbs(pathname) {

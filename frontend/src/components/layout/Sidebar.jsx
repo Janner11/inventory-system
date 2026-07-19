@@ -5,6 +5,8 @@ const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/products', label: 'Productos' },
   { to: '/stock', label: 'Stock' },
+  { to: '/audit', label: 'Auditoría' },
+  { to: '/reports', label: 'Reportes' },
 ];
 
 export default function Sidebar() {

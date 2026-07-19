@@ -64,6 +64,9 @@ export default function ProductDetailPage() {
           ← Volver a productos
         </Link>
         <div className={styles.actionButtons}>
+          <Link to={`/audit?productId=${id}`} className={styles.editButton}>
+            Ver historial
+          </Link>
           <Link to={`/products/${id}/edit`} className={styles.editButton}>
             Editar
           </Link>
