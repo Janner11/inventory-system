@@ -1,5 +1,6 @@
 package com.inventario.dto;
 
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -26,6 +27,7 @@ public record ProductRequestDTO(
 
         @NotNull
         @Positive
+        @Digits(integer = 8, fraction = 2)
         BigDecimal price,
 
         @NotNull

@@ -78,6 +78,27 @@ class StockApiTest extends AbstractApiTest {
                 .then().statusCode(400);
     }
 
+    // BACK-009: antes de @Size en StockMovementRequestDTO.performedBy, este mismo request
+    // llegaba hasta la base de datos (VARCHAR(255), ver V4__create_stock_movements_table.sql)
+    // y fallaba con un DataIntegrityViolationException reportado como "recurso ya existe o
+    // esta en uso" - el mismo mensaje que un SKU duplicado, pese a no tener nada que ver.
+    // Solo alcanzable llamando la API directamente (no es un campo editable en la UI).
+    @Test
+    void registerEntry_conPerformedByExcedeLongitud_devuelve400ConMensajeQueMencionaElCampo() {
+        String productId = createProduct("SKU-STOCK-PERFBY-" + shortId());
+        String longPerformedBy = "x".repeat(256);
+
+        given()
+                .header("Authorization", "Bearer " + WAREHOUSE_TOKEN)
+                .contentType(ContentType.JSON)
+                .body(Map.of("productId", productId, "quantity", 5, "performedBy", longPerformedBy))
+                .when().post("/stock/entry")
+                .then()
+                .statusCode(400)
+                .body("message", org.hamcrest.Matchers.containsString("performedBy"))
+                .body("message", org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("ya existe")));
+    }
+
     @Test
     void registerEntry_conProductoInexistente_devuelve404() {
         given()
