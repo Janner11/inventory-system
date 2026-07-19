@@ -74,7 +74,9 @@ test.describe('Movimientos de stock automatizados', () => {
       reason: 'Salida inválida E2E',
     });
 
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 10_000 });
+    // FRONT-009: el error ahora aparece dos veces - el <p role="alert"> propio del
+    // formulario (FRONT-005) y el toast de error nuevo - ambos con role="alert".
+    await expect(page.getByRole('alert').first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('ajustar stock por debajo del mínimo genera una alerta de stock bajo', async ({ page }) => {

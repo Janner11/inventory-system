@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import ProductForm from '../components/products/ProductForm';
 import { useCreateProduct, useProduct, useUpdateProduct } from '../hooks/useProducts';
+import { useToast } from '../hooks/useToast';
 import styles from '../styles/forms.module.css';
 
 function extractErrorMessage(error) {
@@ -10,6 +11,7 @@ function extractErrorMessage(error) {
 export default function ProductFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const isEditMode = Boolean(id);
 
   const { data: product, isLoading, isError } = useProduct(id);
@@ -22,10 +24,22 @@ export default function ProductFormPage() {
     if (isEditMode) {
       updateMutation.mutate(
         { id, data: values },
-        { onSuccess: () => navigate('/products') },
+        {
+          onSuccess: () => {
+            showToast('Producto actualizado correctamente.');
+            navigate('/products');
+          },
+          onError: (error) => showToast(extractErrorMessage(error), { type: 'error' }),
+        },
       );
     } else {
-      createMutation.mutate(values, { onSuccess: () => navigate('/products') });
+      createMutation.mutate(values, {
+        onSuccess: () => {
+          showToast('Producto creado correctamente.');
+          navigate('/products');
+        },
+        onError: (error) => showToast(extractErrorMessage(error), { type: 'error' }),
+      });
     }
   }
 
