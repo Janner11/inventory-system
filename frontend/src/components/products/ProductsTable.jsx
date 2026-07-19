@@ -5,8 +5,13 @@ import styles from '../../styles/products.module.css';
 export default function ProductsTable({ products, canManage = false }) {
   const deleteMutation = useDeleteProduct();
 
-  function handleDelete(id, name) {
-    if (window.confirm(`¿Eliminar el producto "${name}"?`)) {
+  function handleDelete(id, name, quantity) {
+    const message =
+      quantity > 0
+        ? `¿Eliminar el producto "${name}"? Todavía tiene ${quantity} unidades en stock.`
+        : `¿Eliminar el producto "${name}"?`;
+
+    if (window.confirm(message)) {
       deleteMutation.mutate(id);
     }
   }
@@ -59,7 +64,7 @@ export default function ProductsTable({ products, canManage = false }) {
                     <button
                       type="button"
                       className={styles.deleteButton}
-                      onClick={() => handleDelete(product.id, product.name)}
+                      onClick={() => handleDelete(product.id, product.name, product.quantity)}
                       disabled={deleteMutation.isPending}
                     >
                       Eliminar
