@@ -81,6 +81,28 @@ class ProductApiTest extends AbstractApiTest {
                 .then().statusCode(400);
     }
 
+    // BACK-009: antes de @Digits en ProductRequestDTO.price, este mismo request llegaba
+    // hasta la base de datos (NUMERIC(10,2), ver entity Product) y fallaba con un
+    // DataIntegrityViolationException reportado como "Conflicto de integridad de datos:
+    // el recurso ya existe o esta en uso" - el mismo mensaje que un SKU duplicado (409),
+    // pese a que el problema real es un valor fuera de rango. Ahora @Valid lo atrapa antes
+    // de tocar la BD: 400, con un mensaje que menciona el campo real ("price"), no 409.
+    @Test
+    void createProduct_conPrecioFueraDeRango_devuelve400ConMensajeQueMencionaElCampo() {
+        given()
+                .header("Authorization", "Bearer " + ADMIN_TOKEN)
+                .contentType(ContentType.JSON)
+                .body(Map.of(
+                        "name", "Producto con precio invalido", "sku", "SKU-PRICE-" + shortId(),
+                        "category", "Test", "price", new java.math.BigDecimal("99999999999.99"),
+                        "quantity", 10, "minStock", 2))
+                .when().post("/products")
+                .then()
+                .statusCode(400)
+                .body("message", org.hamcrest.Matchers.containsString("price"))
+                .body("message", org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("ya existe")));
+    }
+
     @Test
     void createProduct_conSkuDuplicado_devuelve409() {
         String sku = "SKU-DUP-" + shortId();

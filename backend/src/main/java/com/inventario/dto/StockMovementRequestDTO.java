@@ -22,6 +22,7 @@ public record StockMovementRequestDTO(
         String observations,
 
         @NotBlank
+        @Size(max = 255)
         String performedBy
 ) {
 }
