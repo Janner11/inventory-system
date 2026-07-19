@@ -83,6 +83,28 @@
   font-weight: 600;
 }
 
+.sortButton {
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: inherit;
+  text-align: left;
+  white-space: nowrap;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sortButton:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.sortButton:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .lowStockRow {
   background-color: #fdf3e7;
 }
