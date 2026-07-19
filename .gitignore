@@ -11,6 +11,10 @@ CLAUDE.md
 !.env.staging.example
 !.env.production.example
 
+# === Gobernanza de repositorio (INFRA-006: commitlint + husky, raiz del monorepo) ===
+node_modules/
+.husky/_/
+
 # === Frontend (Node / Vite) ===
 frontend/node_modules/
 frontend/dist/
