@@ -75,8 +75,10 @@ export class ProductsPage {
   }
 
   async deleteProduct(sku) {
-    this.page.once('dialog', (dialog) => dialog.accept());
     const row = this.rowBySku(sku);
     await row.getByRole('button', { name: 'Eliminar' }).click();
+    // FRONT-009: window.confirm() fue reemplazado por ConfirmDialog, un modal propio -
+    // ya no hay diálogo nativo del navegador que aceptar con page.on('dialog', ...).
+    await this.page.getByRole('alertdialog').getByRole('button', { name: 'Eliminar' }).click();
   }
 }

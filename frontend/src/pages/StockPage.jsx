@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import Pagination from '../components/common/Pagination';
+import Skeleton from '../components/common/Skeleton';
 import MovementsHistoryTable from '../components/stock/MovementsHistoryTable';
 import StockAlerts from '../components/stock/StockAlerts';
 import StockMovementForm from '../components/stock/StockMovementForm';
 import { useAuth } from '../hooks/useAuth';
 import { useAdjustStock, useRegisterEntry, useRegisterExit, useStockAlerts, useStockMovements } from '../hooks/useStock';
+import { useToast } from '../hooks/useToast';
 import styles from '../styles/stock.module.css';
 
 const PAGE_SIZE = 5;
@@ -15,6 +17,7 @@ function extractErrorMessage(error) {
 
 export default function StockPage() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [page, setPage] = useState(1);
   const [apiError, setApiError] = useState(null);
   const [formKey, setFormKey] = useState(0);
@@ -35,8 +38,13 @@ export default function StockPage() {
       onSuccess: () => {
         setPage(1);
         setFormKey((key) => key + 1);
+        showToast('Movimiento registrado correctamente.');
       },
-      onError: (error) => setApiError(extractErrorMessage(error)),
+      onError: (error) => {
+        const message = extractErrorMessage(error);
+        setApiError(message);
+        showToast(message, { type: 'error' });
+      },
     };
 
     if (values.type === 'ADJUSTMENT') {
@@ -72,7 +80,7 @@ export default function StockPage() {
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Alertas de stock bajo</h2>
-        {alertsQuery.isLoading && <p>Cargando alertas...</p>}
+        {alertsQuery.isLoading && <Skeleton variant="table" count={3} label="Cargando alertas..." />}
         {alertsQuery.isError && <p role="alert">No se pudieron cargar las alertas de stock.</p>}
         {alertsQuery.isSuccess && (
           <div className={styles.tableWrapper}>
@@ -93,7 +101,7 @@ export default function StockPage() {
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Historial de movimientos</h2>
-        {movementsQuery.isLoading && <p>Cargando movimientos...</p>}
+        {movementsQuery.isLoading && <Skeleton variant="table" count={5} label="Cargando movimientos..." />}
         {movementsQuery.isError && <p role="alert">No se pudo cargar el historial de movimientos.</p>}
         {movementsQuery.isSuccess && (
           <>

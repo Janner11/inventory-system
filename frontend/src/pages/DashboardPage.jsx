@@ -4,6 +4,7 @@ import QuickAccessCard from '../components/dashboard/QuickAccessCard';
 import RecentMovementsWidget from '../components/dashboard/RecentMovementsWidget';
 import StockStatusChart from '../components/dashboard/StockStatusChart';
 import TopProductsWidget from '../components/dashboard/TopProductsWidget';
+import Skeleton from '../components/common/Skeleton';
 import {
   useDashboardCriticalProducts,
   useDashboardRecentMovements,
@@ -53,7 +54,7 @@ export default function DashboardPage() {
       </div>
 
       <h2 className={styles.sectionTitle}>Resumen del inventario</h2>
-      {summaryQuery.isLoading && <p>Cargando resumen...</p>}
+      {summaryQuery.isLoading && <Skeleton variant="card" count={6} label="Cargando resumen..." />}
       {summaryQuery.isError && (
         <p role="alert">No se pudo cargar el resumen del inventario. Verifica tus permisos.</p>
       )}
@@ -81,21 +82,25 @@ export default function DashboardPage() {
       <div className={styles.widgetsGrid}>
         <section>
           <h2 className={styles.sectionTitle}>Productos en alerta</h2>
-          {criticalProductsQuery.isLoading && <p>Cargando productos en alerta...</p>}
+          {criticalProductsQuery.isLoading && (
+            <Skeleton variant="table" count={3} label="Cargando productos en alerta..." />
+          )}
           {criticalProductsQuery.isError && <p role="alert">No se pudieron cargar los productos en alerta.</p>}
           {criticalProductsQuery.data && <CriticalProductsTable products={criticalProductsQuery.data} />}
         </section>
 
         <section>
           <h2 className={styles.sectionTitle}>Movimientos recientes</h2>
-          {recentMovementsQuery.isLoading && <p>Cargando movimientos recientes...</p>}
+          {recentMovementsQuery.isLoading && (
+            <Skeleton variant="table" count={3} label="Cargando movimientos recientes..." />
+          )}
           {recentMovementsQuery.isError && <p role="alert">No se pudieron cargar los movimientos recientes.</p>}
           {recentMovementsQuery.data && <RecentMovementsWidget movements={recentMovementsQuery.data} />}
         </section>
       </div>
 
       <h2 className={styles.sectionTitle}>Más movidos (últimos 30 días)</h2>
-      {topProductsQuery.isLoading && <p>Cargando productos más movidos...</p>}
+      {topProductsQuery.isLoading && <Skeleton variant="table" count={3} label="Cargando productos más movidos..." />}
       {topProductsQuery.isError && <p role="alert">No se pudo cargar el ranking de productos.</p>}
       {topProductsQuery.data && <TopProductsWidget products={topProductsQuery.data} />}
     </div>

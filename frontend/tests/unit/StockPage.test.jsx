@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import StockPage from '../../src/pages/StockPage';
+import { ToastProvider } from '../../src/context/ToastContext';
 import { useAuth } from '../../src/hooks/useAuth';
 import { getProducts } from '../../src/services/productService';
 import { adjustStock, getMovements, getStockAlerts, registerEntry, registerExit } from '../../src/services/stockService';
@@ -55,7 +56,9 @@ function renderStockPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <StockPage />
+      <ToastProvider>
+        <StockPage />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -129,6 +132,7 @@ describe('StockPage - registrar movimiento', () => {
     expect(registerEntry.mock.calls[0][0]).toEqual(
       expect.objectContaining({ productId: 'p1', quantity: 5, performedBy: 'admin@test.com' }),
     );
+    expect(await screen.findByText('Movimiento registrado correctamente.')).toBeInTheDocument();
   });
 
   it('registra una salida cuando el tipo es Salida', async () => {
@@ -193,6 +197,10 @@ describe('StockPage - registrar movimiento', () => {
     await user.type(screen.getByLabelText('Cantidad'), '999');
     await user.click(screen.getByRole('button', { name: 'Registrar movimiento' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Stock insuficiente para el producto TEC-001');
+    // El mensaje aparece dos veces: el <p role="alert"> propio de StockMovementForm
+    // (FRONT-005) y el toast de error nuevo (FRONT-009) - ambos con role="alert".
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts.map((alert) => alert.textContent)).toContain('Stock insuficiente para el producto TEC-001');
+    expect(alerts).toHaveLength(2);
   });
 });

@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ToastProvider } from '../../src/context/ToastContext';
 import { useAuth } from '../../src/hooks/useAuth';
 import ProductsPage from '../../src/pages/ProductsPage';
 import { getCriticalProducts, getProducts } from '../../src/services/productService';
@@ -41,9 +42,11 @@ function renderProductsPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <ProductsPage />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <ProductsPage />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }

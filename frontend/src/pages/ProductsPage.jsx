@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Pagination from '../components/common/Pagination';
+import Skeleton from '../components/common/Skeleton';
 import ProductFilters from '../components/products/ProductFilters';
 import ProductsTable from '../components/products/ProductsTable';
 import { useAuth } from '../hooks/useAuth';
@@ -73,7 +74,7 @@ export default function ProductsPage() {
         )}
       </div>
 
-      {isLoading && <p>Cargando productos...</p>}
+      {isLoading && <Skeleton variant="table" count={PAGE_SIZE} label="Cargando productos..." />}
       {isError && <p role="alert">No se pudieron cargar los productos: {error.message}</p>}
 
       {!isLoading && !isError && (

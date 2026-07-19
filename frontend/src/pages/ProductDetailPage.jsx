@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import ConfirmDialog from '../components/common/ConfirmDialog';
 import { useDeleteProduct, useProduct } from '../hooks/useProducts';
+import { useToast } from '../hooks/useToast';
 import styles from '../styles/productDetail.module.css';
 
 export default function ProductDetailPage() {
@@ -7,13 +10,18 @@ export default function ProductDetailPage() {
   const navigate = useNavigate();
   const { data: product, isLoading, isError } = useProduct(id);
   const deleteMutation = useDeleteProduct();
+  const { showToast } = useToast();
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function handleDelete() {
-    if (window.confirm(`¿Eliminar el producto "${product.name}"?`)) {
-      deleteMutation.mutate(id, {
-        onSuccess: () => navigate('/products'),
-      });
-    }
+    setConfirmOpen(false);
+    deleteMutation.mutate(id, {
+      onSuccess: () => {
+        showToast('Producto eliminado correctamente.');
+        navigate('/products');
+      },
+      onError: () => showToast('No se pudo eliminar el producto.', { type: 'error' }),
+    });
   }
 
   if (isLoading) return <p>Cargando producto...</p>;
@@ -73,13 +81,22 @@ export default function ProductDetailPage() {
           <button
             type="button"
             className={styles.deleteButton}
-            onClick={handleDelete}
+            onClick={() => setConfirmOpen(true)}
             disabled={deleteMutation.isPending}
           >
             Eliminar
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        message={`¿Eliminar el producto "${product.name}"?`}
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }
