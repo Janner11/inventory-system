@@ -42,11 +42,11 @@ test.describe('Navegación entre secciones', () => {
   });
 
   test('los accesos rápidos del dashboard navegan a Productos y Stock', async ({ page }) => {
-    await page.getByRole('link', { name: 'Ir a Productos' }).click();
+    await page.getByRole('link', { name: /^Productos / }).click();
     await expect(page).toHaveURL(/\/products$/);
 
     await page.goto('/dashboard');
-    await page.getByRole('link', { name: 'Ir a Stock' }).click();
+    await page.getByRole('link', { name: /^Stock / }).click();
     await expect(page).toHaveURL(/\/stock$/);
   });
 });

@@ -92,8 +92,8 @@ describe('DashboardPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.getAllByText('admin@test.com').length).toBeGreaterThan(0);
-    expect(screen.getByRole('link', { name: 'Ir a Productos' })).toHaveAttribute('href', '/products');
-    expect(screen.getByRole('link', { name: 'Ir a Stock' })).toHaveAttribute('href', '/stock');
+    expect(screen.getByRole('link', { name: /^Productos / })).toHaveAttribute('href', '/products');
+    expect(screen.getByRole('link', { name: /^Stock / })).toHaveAttribute('href', '/stock');
   });
 
   it('redirige a la página de inicio si no hay sesión activa', () => {
@@ -139,7 +139,7 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    await userEvent.click(screen.getByRole('link', { name: 'Ir a Productos' }));
+    await userEvent.click(screen.getByRole('link', { name: /^Productos / }));
 
     expect(screen.getByRole('heading', { name: 'Productos' })).toBeInTheDocument();
   });
@@ -155,7 +155,7 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    await userEvent.click(screen.getByRole('link', { name: 'Ir a Stock' }));
+    await userEvent.click(screen.getByRole('link', { name: /^Stock / }));
 
     expect(screen.getByRole('heading', { name: 'Stock' })).toBeInTheDocument();
   });

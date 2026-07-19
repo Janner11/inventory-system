@@ -107,6 +107,10 @@
 }
 
 .actionLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: var(--spacing-sm);
   color: var(--color-primary);
   text-decoration: underline;
 }
@@ -121,8 +125,11 @@
 }
 
 .deleteButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   margin-left: var(--spacing-sm);
-  padding: 0.125rem var(--spacing-sm);
+  padding: var(--spacing-sm);
   border: 1px solid var(--color-danger, #dc2626);
   border-radius: var(--border-radius);
   background: transparent;
