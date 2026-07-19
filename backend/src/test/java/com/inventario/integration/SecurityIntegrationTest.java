@@ -221,12 +221,57 @@ class SecurityIntegrationTest {
                 .then().statusCode(200);
     }
 
+    // SEC-005: 5 intentos fallidos consecutivos (failureFactor en realm.json) deben
+    // bloquear la cuenta temporalmente, incluso para la contrasena correcta - y sin
+    // afectar a otros usuarios. Se usa "manager@test.com" (no usado en ningun otro test
+    // de esta clase) para no interferir con los demas tests, que no garantizan orden de
+    // ejecucion entre si.
+    private void failedLoginAttempt(String username, String wrongPassword) {
+        given()
+                .baseUri(keycloak.getAuthServerUrl())
+                .basePath("")
+                .contentType(ContentType.URLENC)
+                .formParam("grant_type", "password")
+                .formParam("client_id", "inventario-backend")
+                .formParam("client_secret", "inventario-backend-secret")
+                .formParam("username", username)
+                .formParam("password", wrongPassword)
+                .when().post("/realms/inventario/protocol/openid-connect/token")
+                .then().statusCode(401);
+    }
+
+    @Test
+    void bruteForce_5IntentosFallidosBloqueanLaCuentaTemporalmente() {
+        for (int i = 0; i < 5; i++) {
+            failedLoginAttempt("manager@test.com", "contrasena-incorrecta-" + i);
+        }
+
+        // La cuenta queda bloqueada: incluso la contrasena CORRECTA es rechazada -
+        // confirma un bloqueo real, no solo "la contrasena sigue siendo incorrecta".
+        given()
+                .baseUri(keycloak.getAuthServerUrl())
+                .basePath("")
+                .contentType(ContentType.URLENC)
+                .formParam("grant_type", "password")
+                .formParam("client_id", "inventario-backend")
+                .formParam("client_secret", "inventario-backend-secret")
+                .formParam("username", "manager@test.com")
+                .formParam("password", "manager123")
+                .when().post("/realms/inventario/protocol/openid-connect/token")
+                .then().statusCode(401);
+
+        // El bloqueo es por usuario, no por realm: otro usuario sigue logueando normal.
+        realAccessToken("viewer@test.com", "viewer123");
+    }
+
     // SEC-006: revokeRefreshToken en realm.json (Keycloak revoca un refresh token en
-    // cuanto se usa para pedir un par nuevo, no solo cuando expira). Se usan
-    // "warehouse@test.com"/"manager@test.com" (no usados en ningun otro test de esta
-    // clase) para no interferir con los demas tests, y para que la simulacion de
-    // reuso (que termina revocando toda la cadena de refresh de esa sesion, ver el
-    // primer test) no contamine la verificacion del flujo normal (segundo test).
+    // cuanto se usa para pedir un par nuevo, no solo cuando expira). Los dos tests de
+    // abajo usan "warehouse@test.com" (no "manager@test.com": SEC-005 lo deja
+    // potencialmente bloqueado temporalmente durante la corrida de esta misma clase,
+    // ver bruteForce_5IntentosFallidosBloqueanLaCuentaTemporalmente) para no interferir
+    // con los demas tests. Reusar el mismo usuario en ambos tests es seguro: un login
+    // por password grant es independiente de cualquier revocacion previa de la cadena
+    // de refresh de ese usuario.
     private String initialRefreshToken(String username, String password) {
         return given()
                 .baseUri(keycloak.getAuthServerUrl())
@@ -289,10 +334,11 @@ class SecurityIntegrationTest {
 
     @Test
     void refreshToken_flujoNormalDeRotacion_siguFuncionando() {
-        // Sesion propia (usuario distinto), sin ningun reuso de por medio - reproduce
-        // exactamente lo que hace AuthContext.jsx con keycloak.updateToken(30): pedir un
-        // par nuevo con el refresh token vigente, una sola vez.
-        String refreshToken = initialRefreshToken("manager@test.com", "manager123");
+        // Login independiente (mismo usuario que el test anterior, sesion distinta),
+        // sin ningun reuso de por medio - reproduce exactamente lo que hace
+        // AuthContext.jsx con keycloak.updateToken(30): pedir un par nuevo con el
+        // refresh token vigente, una sola vez.
+        String refreshToken = initialRefreshToken("warehouse@test.com", "warehouse123");
 
         refreshGrant(refreshToken)
                 .then()
