@@ -4,6 +4,7 @@ import com.inventario.config.JpaAuditingConfig;
 import dasniko.testcontainers.keycloak.KeycloakContainer;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
+import io.restassured.response.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -20,6 +21,9 @@ import java.util.Map;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 /**
  * A diferencia de {@code ProductApiTest} (api/) y los *ControllerTest (unit/), que
@@ -258,5 +262,87 @@ class SecurityIntegrationTest {
 
         // El bloqueo es por usuario, no por realm: otro usuario sigue logueando normal.
         realAccessToken("viewer@test.com", "viewer123");
+    }
+
+    // SEC-006: revokeRefreshToken en realm.json (Keycloak revoca un refresh token en
+    // cuanto se usa para pedir un par nuevo, no solo cuando expira). Los dos tests de
+    // abajo usan "warehouse@test.com" (no "manager@test.com": SEC-005 lo deja
+    // potencialmente bloqueado temporalmente durante la corrida de esta misma clase,
+    // ver bruteForce_5IntentosFallidosBloqueanLaCuentaTemporalmente) para no interferir
+    // con los demas tests. Reusar el mismo usuario en ambos tests es seguro: un login
+    // por password grant es independiente de cualquier revocacion previa de la cadena
+    // de refresh de ese usuario.
+    private String initialRefreshToken(String username, String password) {
+        return given()
+                .baseUri(keycloak.getAuthServerUrl())
+                .basePath("")
+                .contentType(ContentType.URLENC)
+                .formParam("grant_type", "password")
+                .formParam("client_id", "inventario-backend")
+                .formParam("client_secret", "inventario-backend-secret")
+                .formParam("username", username)
+                .formParam("password", password)
+                .when().post("/realms/inventario/protocol/openid-connect/token")
+                .then().statusCode(200)
+                .extract().path("refresh_token");
+    }
+
+    private Response refreshGrant(String refreshToken) {
+        return given()
+                .baseUri(keycloak.getAuthServerUrl())
+                .basePath("")
+                .contentType(ContentType.URLENC)
+                .formParam("grant_type", "refresh_token")
+                .formParam("client_id", "inventario-backend")
+                .formParam("client_secret", "inventario-backend-secret")
+                .formParam("refresh_token", refreshToken)
+                .when().post("/realms/inventario/protocol/openid-connect/token");
+    }
+
+    @Test
+    void refreshToken_yaRotado_esRechazadoAlReusarse() {
+        String refreshTokenA = initialRefreshToken("warehouse@test.com", "warehouse123");
+
+        // Uso legitimo: la app pide un par nuevo con el refresh token A (rotacion).
+        Response rotated = refreshGrant(refreshTokenA);
+        rotated.then().statusCode(200);
+        String refreshTokenB = rotated.jsonPath().getString("refresh_token");
+        assertNotEquals(refreshTokenA, refreshTokenB);
+
+        // Reusar el refresh token A, ya rotado: debe ser rechazado (revokeRefreshToken).
+        // No se asume un codigo de estado especifico (SEC-005 confirmo que Keycloak no
+        // siempre usa 400 para invalid_grant) - se verifica que la respuesta no otorga
+        // un access_token nuevo, que es la garantia real que pide el ticket.
+        refreshGrant(refreshTokenA)
+                .then()
+                .statusCode(not(200))
+                .body("access_token", nullValue());
+
+        // Hallazgo real (no asumido de antemano): al detectar el reuso de un token ya
+        // rotado, Keycloak no se limita a rechazar ESE token - revoca toda la cadena de
+        // refresh de la sesion (deteccion de robo/replay). El propio token B, legitimo
+        // y nunca antes usado, tambien queda invalido a partir de aqui. Es un
+        // comportamiento de seguridad correcto (y mas estricto de lo que asumia la
+        // primera version de este test) - se verifica explicitamente en vez de
+        // ignorarlo, para no dejar pasar una regresion futura si Keycloak deja de
+        // revocar la sesion completa.
+        refreshGrant(refreshTokenB)
+                .then()
+                .statusCode(not(200))
+                .body("access_token", nullValue());
+    }
+
+    @Test
+    void refreshToken_flujoNormalDeRotacion_siguFuncionando() {
+        // Login independiente (mismo usuario que el test anterior, sesion distinta),
+        // sin ningun reuso de por medio - reproduce exactamente lo que hace
+        // AuthContext.jsx con keycloak.updateToken(30): pedir un par nuevo con el
+        // refresh token vigente, una sola vez.
+        String refreshToken = initialRefreshToken("warehouse@test.com", "warehouse123");
+
+        refreshGrant(refreshToken)
+                .then()
+                .statusCode(200)
+                .body("access_token", org.hamcrest.Matchers.notNullValue());
     }
 }

@@ -13,6 +13,8 @@
   "minimumQuickLoginWaitSeconds": 60,
   "maxFailureWaitSeconds": 900,
   "maxDeltaTimeSeconds": 43200,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
   "clients": [
     {
       "clientId": "inventario-frontend",
