@@ -8,6 +8,31 @@ Ver `CLAUDE.md` (local, no versionado) sección 7 para el detalle completo. En r
 - Ramas: `feat/*`, `fix/*`, `chore/*`, `docs/*`, `test/*`.
 - [Conventional Commits](https://www.conventionalcommits.org/): `tipo(scope): descripción en minúsculas, imperativo, sin punto final`.
 
+### Conventional Commits — cumplimiento automático (INFRA-006)
+
+Un hook local (`commitlint` + `husky`) rechaza cualquier commit cuyo mensaje no siga
+Conventional Commits **antes** de que se cree el commit — no depende solo de la
+disciplina manual.
+
+**Después de clonar el repositorio, corré `npm install` en la raíz** (no solo en
+`backend/`/`frontend/`) para que el hook quede activo:
+
+```bash
+npm install   # en la raiz del repo — instala husky + commitlint y activa el hook commit-msg
+```
+
+Sin este paso, el hook de `commit-msg` no existe en `.git/hooks/` y los commits pasan
+sin validar (el `package.json` de la raíz es una dependencia de gobernanza del monorepo,
+separada de `backend/build.gradle.kts`/`frontend/package.json` — no es la app). Un
+commit con formato incorrecto se ve así:
+
+```
+$ git commit -m "arreglos varios"
+✖   subject may not be empty [subject-empty]
+✖   type may not be empty [type-empty]
+husky - commit-msg script failed (code 1)
+```
+
 ## Pipeline de CI (GitHub Actions, CICD-001)
 
 `.github/workflows/ci.yml` corre en cada push a `develop`/`main` y en cada Pull Request

@@ -1,0 +1,14 @@
+{
+  "name": "inventario-repo-governance",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Herramientas de gobernanza del monorepo (commitlint + husky). No es la app - backend/ y frontend/ tienen sus propios manifiestos.",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "husky": "^9.1.6"
+  }
+}
