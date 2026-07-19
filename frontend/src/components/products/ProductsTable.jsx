@@ -5,7 +5,38 @@ import { useDeleteProduct } from '../../hooks/useProducts';
 import { useToast } from '../../hooks/useToast';
 import styles from '../../styles/products.module.css';
 
-export default function ProductsTable({ products, canManage = false }) {
+const SORTABLE_COLUMNS = [
+  { field: 'sku', label: 'SKU' },
+  { field: 'name', label: 'Nombre' },
+  { field: 'category', label: 'Categoría' },
+  { field: 'price', label: 'Precio' },
+  { field: 'quantity', label: 'Cantidad' },
+  { field: 'minStock', label: 'Stock mínimo' },
+  { field: 'status', label: 'Estado' },
+];
+
+function SortableHeader({ field, label, sortField, sortDirection, onSortChange }) {
+  const isActive = sortField === field;
+  const ariaSort = isActive ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none';
+  const indicator = isActive ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : '';
+
+  return (
+    <th aria-sort={ariaSort}>
+      <button type="button" className={styles.sortButton} onClick={() => onSortChange(field)}>
+        {label}
+        {indicator}
+      </button>
+    </th>
+  );
+}
+
+export default function ProductsTable({
+  products,
+  canManage = false,
+  sortField,
+  sortDirection,
+  onSortChange = () => {},
+}) {
   const deleteMutation = useDeleteProduct();
   const { showToast } = useToast();
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -42,13 +73,16 @@ export default function ProductsTable({ products, canManage = false }) {
       <table className={styles.table}>
         <thead>
           <tr>
-            <th>SKU</th>
-            <th>Nombre</th>
-            <th>Categoría</th>
-            <th>Precio</th>
-            <th>Cantidad</th>
-            <th>Stock mínimo</th>
-            <th>Estado</th>
+            {SORTABLE_COLUMNS.map(({ field, label }) => (
+              <SortableHeader
+                key={field}
+                field={field}
+                label={label}
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onSortChange={onSortChange}
+              />
+            ))}
             <th>Acciones</th>
           </tr>
         </thead>
