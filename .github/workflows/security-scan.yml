@@ -48,6 +48,12 @@ jobs:
           # montado como volumen falla en Docker Desktop/macOS (virtiofs) — copiarlo evita
           # depender de si el runner tiene el mismo problema.
           cp zap-ignore-rules.conf zap-reports/zap-ignore-rules.conf
+          # zap-baseline.py agrega "-addonupdate" al arrancar el daemon de ZAP a menos que
+          # se le pase "-silent" via -z (ver docker/zap-api-scan.py en zaproxy/zaproxy) - sin
+          # esto, ZAP intenta descargar/instalar cualquier addon mas nuevo del marketplace
+          # antes de exponer su API, lo que puede consumir el timeout completo de arranque
+          # (600s por defecto) y tumbar el job con "Failed to connect to ZAP after 600
+          # seconds" sin que sea un fallo real del scan (encontrado real en CI).
           docker run --network host --rm \
             -v "$(pwd)/zap-reports:/zap/wrk/:rw" \
             zaproxy/zap-stable zap-baseline.py \
@@ -56,6 +62,7 @@ jobs:
             -r baseline-report.html \
             -x baseline-report.xml \
             -J baseline-report.json \
+            -z "-silent" \
             -I
           # zap-baseline.py sale con codigo != 0 en WARN/FAIL segun sus propias reglas
           # (-I evita que WARN por si solo tumbe el job); el quality gate real de HIGH
@@ -124,6 +131,11 @@ jobs:
           # archivo - zaproxy/zap-stable corre como uid 1000 no-root dentro del contenedor.
           chmod -R 777 zap-reports
           cp zap-ignore-rules.conf zap-reports/zap-ignore-rules.conf
+          # -z "-silent": ver el mismo comentario en el job "OWASP ZAP Baseline Scan
+          # (Frontend)" de este archivo - evita que ZAP se auto-actualice al arrancar y
+          # agote el timeout de 600s antes de exponer su API ("Failed to connect to ZAP
+          # after 600 seconds", encontrado real en CI, no relacionado a ningun cambio de
+          # codigo de la app).
           docker run --network host --rm \
             -v "$(pwd)/zap-reports:/zap/wrk/:rw" \
             zaproxy/zap-stable zap-api-scan.py \
@@ -133,6 +145,7 @@ jobs:
             -r api-scan-report.html \
             -x api-scan-report.xml \
             -J api-scan-report.json \
+            -z "-silent" \
             -I
 
       - name: Quality gate — 0 vulnerabilidades HIGH
