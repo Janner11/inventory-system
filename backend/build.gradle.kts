@@ -131,6 +131,16 @@ dependencyCheck {
     // variable seteada, se usa; sin ella, dependency-check sigue funcionando (mas lento).
     System.getenv("NVD_API_KEY")?.let { nvd.apiKey = it }
 
+    // Encontrado real en CI (2026-07): incluso con NVD_API_KEY, la primera sincronizacion
+    // del historico completo del NVD puede exceder los 90 minutos y cancelar el job que
+    // dispara en cada PR/push. Se desacopla: un workflow programado semanal (sin nadie
+    // esperando) es el unico que sincroniza de verdad (autoUpdate=true, su default); el
+    // job que corre en cada PR pasa "-PdependencyCheckAutoUpdate=false" para SIEMPRE usar
+    // el ultimo cache ya restaurado (via restore-keys: nvd-db- en security-scan.yml), sin
+    // importar cuanto tarde el NVD ese dia. Default true para que `./gradlew
+    // dependencyCheckAnalyze` local (sin este flag) siga sincronizando como siempre.
+    autoUpdate = (findProperty("dependencyCheckAutoUpdate") as String?)?.toBoolean() ?: true
+
     // Solo las dependencias que realmente terminan en el artefacto desplegado - las de
     // solo-test (Testcontainers, RestAssured, JUnit, etc.) no representan riesgo en
     // produccion y solo agregan ruido/tiempo de escaneo.
