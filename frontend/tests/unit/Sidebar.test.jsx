@@ -1,7 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from '../../src/components/layout/Sidebar';
+import { useAuth } from '../../src/hooks/useAuth';
+
+vi.mock('../../src/hooks/useAuth');
 
 function renderAt(path) {
   return render(
@@ -10,6 +13,10 @@ function renderAt(path) {
     </MemoryRouter>,
   );
 }
+
+beforeEach(() => {
+  useAuth.mockReturnValue({ hasScope: () => false });
+});
 
 describe('Sidebar', () => {
   it('muestra los enlaces a Dashboard, Productos y Stock', () => {
@@ -27,5 +34,18 @@ describe('Sidebar', () => {
 
     expect(screen.getByRole('link', { name: 'Productos' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Dashboard' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('oculta el enlace a Usuarios sin el scope user:manage', () => {
+    renderAt('/dashboard');
+
+    expect(screen.queryByRole('link', { name: 'Usuarios' })).not.toBeInTheDocument();
+  });
+
+  it('muestra el enlace a Usuarios con el scope user:manage', () => {
+    useAuth.mockReturnValue({ hasScope: (scope) => scope === 'user:manage' });
+    renderAt('/dashboard');
+
+    expect(screen.getByRole('link', { name: 'Usuarios' })).toHaveAttribute('href', '/users');
   });
 });
