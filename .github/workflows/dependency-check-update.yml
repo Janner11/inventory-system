@@ -1,5 +1,8 @@
 name: Dependency-Check NVD Update
 
+# (comentario trivial para forzar que GitHub re-indexe este workflow en la pestaña
+# Actions — no aparecía tras el merge a develop, ver CLAUDE.md)
+
 # Sincroniza la base de datos de CVEs del NVD y la deja en cache para que el job
 # "dependency-check" de security-scan.yml (disparado en cada PR/push) nunca tenga que
 # esperar al NVD en vivo - ver el comentario en ese job para el contexto completo del
