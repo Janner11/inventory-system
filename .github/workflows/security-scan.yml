@@ -165,7 +165,16 @@ jobs:
   dependency-check:
     name: OWASP Dependency-Check
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # La sincronizacion inicial del NVD (historial completo desde ~2002) puede exceder
+    # los 30 minutos incluso con NVD_API_KEY configurada, si el cache semanal
+    # (nvd-db-<semana>) todavia no existe ni tiene un "restore-keys" previo del que
+    # partir (encontrado real en CI: cancelado dos veces con "Error: The operation was
+    # canceled", la segunda vez ya con la API key activa, sin el warning de "API Key was
+    # not provided"). Una vez esta primera sincronizacion completa, restore-keys: nvd-db-
+    # (mas abajo) hace que las semanas siguientes partan del cache anterior en vez de
+    # descargar el historico completo de nuevo, asi que este timeout generoso solo
+    # debería necesitarse la primera vez.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
