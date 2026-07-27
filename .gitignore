@@ -25,6 +25,8 @@ frontend/playwright-report/
 frontend/test-results/
 frontend/allure-results/
 frontend/allure-report/
+frontend/lighthouse-reports/
+frontend/.lighthouse-chrome-profile/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

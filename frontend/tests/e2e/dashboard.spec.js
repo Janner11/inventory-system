@@ -25,8 +25,8 @@ test.describe('Dashboard', () => {
 
   test('el dashboard muestra accesos rápidos, productos en alerta y movimientos recientes', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'Accesos rápidos' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Ir a Productos' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Ir a Stock' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Productos / })).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Stock / })).toBeVisible();
 
     await expect(page.getByRole('heading', { name: 'Productos en alerta' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Movimientos recientes' })).toBeVisible();
