@@ -1,8 +1,5 @@
 name: Dependency-Check NVD Update
 
-# (comentario trivial para forzar que GitHub re-indexe este workflow en la pestaña
-# Actions — no aparecía tras el merge a develop, ver CLAUDE.md)
-
 # Sincroniza la base de datos de CVEs del NVD y la deja en cache para que el job
 # "dependency-check" de security-scan.yml (disparado en cada PR/push) nunca tenga que
 # esperar al NVD en vivo - ver el comentario en ese job para el contexto completo del
@@ -12,7 +9,17 @@ name: Dependency-Check NVD Update
 #
 # Corre semanal (nadie espera este workflow) y tambien se puede disparar a mano
 # (workflow_dispatch) para poblar el cache la primera vez sin esperar al cron.
+#
+# TEMPORAL: se agrego "push" a develop porque un workflow que solo tiene
+# schedule/workflow_dispatch nunca llega a registrarse en GitHub (ni en la UI ni en la
+# API - confirmado con GET /actions/workflows, solo listaba los 3 workflows que ya
+# tenian push/pull_request) hasta que corre al menos una vez por un evento real. Se
+# quita en un commit aparte apenas quede registrado.
 on:
+  push:
+    branches: [develop]
+    paths:
+      - '.github/workflows/dependency-check-update.yml'
   schedule:
     - cron: '0 3 * * 1'  # Lunes 03:00 UTC
   workflow_dispatch:
