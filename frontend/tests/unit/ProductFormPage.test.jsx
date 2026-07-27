@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ToastProvider } from '../../src/context/ToastContext';
 import ProductFormPage from '../../src/pages/ProductFormPage';
 import { createProduct, getProductById, updateProduct } from '../../src/services/productService';
 
@@ -30,13 +31,15 @@ function renderPage(initialPath) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route path="/products" element={<p>Página de Productos</p>} />
-          <Route path="/products/new" element={<ProductFormPage />} />
-          <Route path="/products/:id/edit" element={<ProductFormPage />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[initialPath]}>
+          <Routes>
+            <Route path="/products" element={<p>Página de Productos</p>} />
+            <Route path="/products/new" element={<ProductFormPage />} />
+            <Route path="/products/:id/edit" element={<ProductFormPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -73,6 +76,23 @@ describe('ProductFormPage - modo creación', () => {
     expect(await screen.findByText('Página de Productos')).toBeInTheDocument();
   });
 
+  it('muestra un toast de éxito al crear el producto', async () => {
+    const user = userEvent.setup();
+    createProduct.mockResolvedValue({ id: 'new-id', sku: 'TEC-010' });
+
+    renderPage('/products/new');
+
+    await user.type(screen.getByLabelText('Nombre'), 'Teclado mecánico');
+    await user.type(screen.getByLabelText('SKU'), 'TEC-010');
+    await user.type(screen.getByLabelText('Categoría'), 'Electronica');
+    await user.type(screen.getByLabelText('Precio'), '49.99');
+    await user.type(screen.getByLabelText('Cantidad'), '20');
+    await user.type(screen.getByLabelText('Stock mínimo'), '5');
+    await user.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    expect(await screen.findByText('Producto creado correctamente.')).toBeInTheDocument();
+  });
+
   it('muestra el error de SKU duplicado (409) devuelto por la API sin navegar', async () => {
     const user = userEvent.setup();
     createProduct.mockRejectedValue({
@@ -89,7 +109,10 @@ describe('ProductFormPage - modo creación', () => {
     await user.type(screen.getByLabelText('Stock mínimo'), '5');
     await user.click(screen.getByRole('button', { name: 'Guardar' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe un producto con el SKU: TEC-010');
+    // El mensaje aparece dos veces: el <p role="alert"> propio de ProductForm y el toast
+    // de error nuevo (FRONT-009) - ambos con role="alert".
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts.map((alert) => alert.textContent)).toContain('Ya existe un producto con el SKU: TEC-010');
     expect(screen.getByRole('heading', { name: 'Nuevo producto' })).toBeInTheDocument();
   });
 
@@ -107,7 +130,8 @@ describe('ProductFormPage - modo creación', () => {
     await user.type(screen.getByLabelText('Stock mínimo'), '0');
     await user.click(screen.getByRole('button', { name: 'Guardar' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Ocurrió un error inesperado. Intenta nuevamente.');
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts.map((alert) => alert.textContent)).toContain('Ocurrió un error inesperado. Intenta nuevamente.');
   });
 
   it('"Cancelar" navega a /products sin llamar a la API', async () => {
@@ -164,5 +188,6 @@ describe('ProductFormPage - modo edición', () => {
       expect(updateProduct).toHaveBeenCalledWith('abc-123', expect.objectContaining({ quantity: 3 })),
     );
     expect(await screen.findByText('Página de Productos')).toBeInTheDocument();
+    expect(await screen.findByText('Producto actualizado correctamente.')).toBeInTheDocument();
   });
 });

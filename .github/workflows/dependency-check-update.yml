@@ -1,0 +1,77 @@
+name: Dependency-Check NVD Update
+
+# Sincroniza la base de datos de CVEs del NVD y la deja en cache para que el job
+# "dependency-check" de security-scan.yml (disparado en cada PR/push) nunca tenga que
+# esperar al NVD en vivo - ver el comentario en ese job para el contexto completo del
+# problema real que esto resuelve (encontrado en CI, 2026-07: la sincronizacion en vivo
+# se canceló dos veces incluso con NVD_API_KEY configurada, primero a los 30 min, despues
+# a los 90 min, sin completar).
+#
+# Corre semanal (nadie espera este workflow) y tambien se puede disparar a mano
+# (workflow_dispatch) para poblar el cache la primera vez sin esperar al cron.
+on:
+  schedule:
+    - cron: '0 3 * * 1'  # Lunes 03:00 UTC
+  workflow_dispatch:
+
+# Evita que 2+ disparos manuales (o un disparo manual solapado con el cron) corran en
+# paralelo - varias corridas simultaneas con la misma NVD_API_KEY compiten por el mismo
+# rate limit (pensado para un solo cliente) y se frenan entre si en vez de ir mas rapido.
+# cancel-in-progress: false -> un disparo nuevo espera en cola en vez de matar una corrida
+# que ya venia avanzada.
+concurrency:
+  group: dependency-check-nvd-update
+  cancel-in-progress: false
+
+jobs:
+  update-nvd-database:
+    name: Sync NVD database
+    runs-on: ubuntu-latest
+    # Generoso a propósito - nada depende de que este job termine rápido, solo de que
+    # eventualmente termine y deje el cache poblado. Dato real (2026-07): una sincronización
+    # completa desde cero (370,848 registros del NVD) tomó 50m10s en una máquina local bien
+    # conectada; en GitHub Actions (runner compartido, 2 vCPU) no alcanzó a completar ni en
+    # 180 min en 2 intentos - se sube a 240 con margen real, no una adivinanza más.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Compute cache week
+        id: week
+        run: echo "week=$(date +%Y-W%V)" >> "$GITHUB_OUTPUT"
+
+      # Restore+save real (a diferencia de actions/cache/restore del job de PR) - este es
+      # el ÚNICO escritor del cache nvd-db-<semana>. restore-keys parte de la semana
+      # anterior si existe, así que la sincronización real de aquí en adelante es
+      # incremental (solo los CVEs nuevos desde la última corrida), no un historial
+      # completo desde cero cada semana.
+      - name: Cache NVD database
+        uses: actions/cache@v4
+        with:
+          path: backend/build/dependency-check-data
+          key: nvd-db-${{ steps.week.outputs.week }}
+          restore-keys: nvd-db-
+
+      # --info: sin esto, el plugin no imprime NADA mientras sincroniza (encontrado real
+      # en CI - un log completamente vacío durante 3 horas parecía un cuelgue, pero en
+      # realidad no había forma de saberlo sin este flag; con --info se ve el progreso
+      # real, ej. "Downloaded 180,000/370,848 (49%)").
+      - name: Sync NVD database and analyze
+        working-directory: backend
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./gradlew dependencyCheckAnalyze --info
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report-scheduled
+          path: backend/build/reports/dependency-check/

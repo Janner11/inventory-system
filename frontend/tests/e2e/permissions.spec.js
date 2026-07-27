@@ -39,8 +39,9 @@ test.describe('Permisos por rol en la UI', () => {
     await page.fill('#minStock', '1');
     await page.getByRole('button', { name: 'Guardar' }).click();
 
-    // El backend rechaza con 403 (SCOPE_product:manage insuficiente) — la UI lo muestra como alerta.
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 10_000 });
+    // El backend rechaza con 403 (SCOPE_product:manage insuficiente) — la UI lo muestra como
+    // alerta dos veces: el <p role="alert"> propio del formulario y el toast de error (FRONT-009).
+    await expect(page.getByRole('alert').first()).toBeVisible({ timeout: 10_000 });
     await expect(page).toHaveURL(/\/products\/new/);
   });
 

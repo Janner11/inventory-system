@@ -425,6 +425,9 @@ jobs:
           # bug y mismo fix que los 2 jobs de security-scan.yml).
           chmod -R 777 zap-reports
           cp zap-ignore-rules.conf zap-reports/zap-ignore-rules.conf
+          # -z "-silent": evita que ZAP se auto-actualice al arrancar (mismo bug y mismo
+          # fix que security-scan.yml — "Failed to connect to ZAP after 600 seconds" si
+          # el marketplace tiene addons mas nuevos que el bundle de la imagen).
           docker run --network host --rm \
             -v "$(pwd)/zap-reports:/zap/wrk/:rw" \
             zaproxy/zap-stable zap-baseline.py \
@@ -433,6 +436,7 @@ jobs:
             -r baseline-report.html \
             -x baseline-report.xml \
             -J baseline-report.json \
+            -z "-silent" \
             -I
 
       - name: Security quality gate — 0 vulnerabilidades HIGH

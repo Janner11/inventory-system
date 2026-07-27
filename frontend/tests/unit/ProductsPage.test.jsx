@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ToastProvider } from '../../src/context/ToastContext';
 import { useAuth } from '../../src/hooks/useAuth';
 import ProductsPage from '../../src/pages/ProductsPage';
 import { getCriticalProducts, getProducts } from '../../src/services/productService';
@@ -24,6 +25,7 @@ const ALL_PRODUCTS = [
   { id: '4', sku: 'OFI-001', name: 'Escritorio', category: 'Oficina', price: 150, quantity: 8, minStock: 2, status: 'ACTIVE' },
   { id: '5', sku: 'OFI-002', name: 'Grapadora', category: 'Oficina', price: 5, quantity: 1, minStock: 5, status: 'ACTIVE' },
   { id: '6', sku: 'ALI-001', name: 'Cafe', category: 'Alimentos', price: 8, quantity: 40, minStock: 10, status: 'ACTIVE' },
+  { id: '7', sku: 'TEC-004', name: 'Monitor Descontinuado', category: 'Electronica', price: 300, quantity: 0, minStock: 2, status: 'INACTIVE' },
 ];
 
 function paginate(list, page = 0, size = 20) {
@@ -37,13 +39,20 @@ function paginate(list, page = 0, size = 20) {
   };
 }
 
+function compareValues(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b));
+}
+
 function renderProductsPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <ProductsPage />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <ProductsPage />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -53,8 +62,10 @@ beforeEach(() => {
 
   useAuth.mockReturnValue({ hasScope: () => true });
 
-  getProducts.mockImplementation(async ({ page = 0, size = 20, category, q } = {}) => {
-    let filtered = ALL_PRODUCTS;
+  // Replica el comportamiento real del backend (ProductSpecifications/ProductController,
+  // sección 8): sin status explícito, filtra solo ACTIVE (ADR-001).
+  getProducts.mockImplementation(async ({ page = 0, size = 20, category, q, status, minPrice, maxPrice, sort } = {}) => {
+    let filtered = ALL_PRODUCTS.filter((product) => product.status === (status || 'ACTIVE'));
     if (category) {
       filtered = filtered.filter((product) => product.category === category);
     }
@@ -64,11 +75,24 @@ beforeEach(() => {
         (product) => product.name.toLowerCase().includes(term) || product.sku.toLowerCase().includes(term),
       );
     }
+    if (minPrice !== undefined) {
+      filtered = filtered.filter((product) => product.price >= Number(minPrice));
+    }
+    if (maxPrice !== undefined) {
+      filtered = filtered.filter((product) => product.price <= Number(maxPrice));
+    }
+    if (sort) {
+      const [field, direction] = sort.split(',');
+      filtered = [...filtered].sort((a, b) => {
+        const result = compareValues(a[field], b[field]);
+        return direction === 'desc' ? -result : result;
+      });
+    }
     return paginate(filtered, page, size);
   });
 
   getCriticalProducts.mockImplementation(async () =>
-    ALL_PRODUCTS.filter((product) => product.quantity < product.minStock),
+    ALL_PRODUCTS.filter((product) => product.status === 'ACTIVE' && product.quantity < product.minStock),
   );
 });
 
@@ -93,7 +117,10 @@ describe('ProductsPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Siguiente' }));
 
-    expect(await screen.findByText('ALI-001')).toBeInTheDocument();
+    // Orden alfabético por nombre (default del backend real, ProductController): Cafe,
+    // Escritorio, Grapadora, Laptop Dell Inspiron y Mouse Logitech caen en la página 1;
+    // Teclado Mecanico (TEC-003) queda solo en la página 2.
+    expect(await screen.findByText('TEC-003')).toBeInTheDocument();
     expect(screen.getByText('Página 2 de 2')).toBeInTheDocument();
     expect(getProducts).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }));
   });
@@ -130,6 +157,72 @@ describe('ProductsPage', () => {
     expect(screen.queryByText('TEC-001')).not.toBeInTheDocument();
   });
 
+  it('filtra por rango de precio (mínimo y máximo) vía el backend', async () => {
+    const user = userEvent.setup();
+    renderProductsPage();
+
+    await screen.findByText('TEC-001');
+
+    await user.type(screen.getByLabelText('Precio mínimo'), '50');
+    await user.type(screen.getByLabelText('Precio máximo'), '200');
+
+    await waitFor(() => {
+      expect(getProducts).toHaveBeenCalledWith(expect.objectContaining({ minPrice: '50', maxPrice: '200' }));
+    });
+    // Solo Teclado Mecanico (60) y Escritorio (150) caen en [50, 200].
+    expect(await screen.findByText('Teclado Mecanico')).toBeInTheDocument();
+    expect(screen.getByText('Escritorio')).toBeInTheDocument();
+    expect(screen.queryByText('Laptop Dell Inspiron')).not.toBeInTheDocument();
+    expect(screen.getByText('Página 1 de 1')).toBeInTheDocument();
+  });
+
+  it('filtra por estado "Inactivos" vía el backend', async () => {
+    const user = userEvent.setup();
+    renderProductsPage();
+
+    await screen.findByText('TEC-001');
+
+    await user.selectOptions(screen.getByLabelText('Estado'), 'INACTIVE');
+
+    await waitFor(() => {
+      expect(getProducts).toHaveBeenCalledWith(expect.objectContaining({ status: 'INACTIVE' }));
+    });
+    expect(await screen.findByText('Monitor Descontinuado')).toBeInTheDocument();
+    expect(screen.queryByText('Laptop Dell Inspiron')).not.toBeInTheDocument();
+  });
+
+  it('ordena por precio al hacer click en el header de la columna', async () => {
+    const user = userEvent.setup();
+    renderProductsPage();
+
+    await screen.findByText('TEC-001');
+
+    await user.click(screen.getByRole('button', { name: 'Precio' }));
+
+    await waitFor(() => {
+      expect(getProducts).toHaveBeenCalledWith(expect.objectContaining({ sort: 'price,asc' }));
+    });
+    expect(screen.getByRole('columnheader', { name: /Precio/ })).toHaveAttribute('aria-sort', 'ascending');
+
+    const rows = await screen.findAllByRole('row');
+    // La primera fila de datos (después del encabezado) debe ser el precio más bajo: Grapadora ($5).
+    expect(within(rows[1]).getByText('Grapadora')).toBeInTheDocument();
+  });
+
+  it('alterna la dirección del orden al hacer click de nuevo en la misma columna', async () => {
+    const user = userEvent.setup();
+    renderProductsPage();
+
+    await screen.findByText('TEC-001');
+
+    await user.click(screen.getByRole('button', { name: 'Precio' }));
+    await waitFor(() => expect(getProducts).toHaveBeenCalledWith(expect.objectContaining({ sort: 'price,asc' })));
+
+    await user.click(screen.getByRole('button', { name: /Precio/ }));
+    await waitFor(() => expect(getProducts).toHaveBeenCalledWith(expect.objectContaining({ sort: 'price,desc' })));
+    expect(screen.getByRole('columnheader', { name: /Precio/ })).toHaveAttribute('aria-sort', 'descending');
+  });
+
   it('"Solo stock bajo" usa /products/critical y muestra solo productos bajo el mínimo', async () => {
     const user = userEvent.setup();
     renderProductsPage();
@@ -145,18 +238,49 @@ describe('ProductsPage', () => {
     expect(screen.getAllByText('Stock bajo')).toHaveLength(2);
   });
 
+  it('"Solo stock bajo" también respeta el filtro de precio, aplicado client-side', async () => {
+    const user = userEvent.setup();
+    renderProductsPage();
+
+    await screen.findByText('TEC-001');
+
+    await user.click(screen.getByLabelText('Solo stock bajo'));
+    expect(await screen.findByText('Grapadora')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Precio mínimo'), '10');
+
+    // Grapadora ($5) queda por debajo del nuevo mínimo; Mouse Logitech ($25) sigue.
+    expect(await screen.findByText('Mouse Logitech')).toBeInTheDocument();
+    expect(screen.queryByText('Grapadora')).not.toBeInTheDocument();
+  });
+
   it('vuelve a la página 1 al cambiar el término de búsqueda', async () => {
     const user = userEvent.setup();
     renderProductsPage();
 
     await screen.findByText('TEC-001');
     await user.click(screen.getByRole('button', { name: 'Siguiente' }));
-    expect(await screen.findByText('ALI-001')).toBeInTheDocument();
+    expect(await screen.findByText('TEC-003')).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Buscar'), 'a');
 
     await waitFor(() => {
       expect(getProducts).toHaveBeenCalledWith(expect.objectContaining({ page: 0, q: 'a' }));
+    });
+  });
+
+  it('vuelve a la página 1 al cambiar el precio mínimo', async () => {
+    const user = userEvent.setup();
+    renderProductsPage();
+
+    await screen.findByText('TEC-001');
+    await user.click(screen.getByRole('button', { name: 'Siguiente' }));
+    expect(await screen.findByText('TEC-003')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Precio mínimo'), '1');
+
+    await waitFor(() => {
+      expect(getProducts).toHaveBeenCalledWith(expect.objectContaining({ page: 0 }));
     });
   });
 

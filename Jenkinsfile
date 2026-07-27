@@ -203,6 +203,10 @@ pipeline {
                         if [ -n "${HOST_WORKSPACE_ROOT:-}" ]; then
                           ZAP_REPORTS_DIR="${HOST_WORKSPACE_ROOT}/${JOB_NAME}/zap-reports"
                         fi
+                        # -z "-silent": evita que ZAP se auto-actualice al arrancar (mismo
+                        # bug y mismo fix que security-scan.yml/ci.yml — "Failed to connect
+                        # to ZAP after 600 seconds" si el marketplace tiene addons mas
+                        # nuevos que el bundle de la imagen).
                         docker run --network host --rm \
                           -v "${ZAP_REPORTS_DIR}:/zap/wrk/:rw" \
                           zaproxy/zap-stable zap-baseline.py \
@@ -211,6 +215,7 @@ pipeline {
                           -r baseline-report.html \
                           -x baseline-report.xml \
                           -J baseline-report.json \
+                          -z "-silent" \
                           -I
                     '''
                 }

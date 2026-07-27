@@ -48,6 +48,12 @@ jobs:
           # montado como volumen falla en Docker Desktop/macOS (virtiofs) — copiarlo evita
           # depender de si el runner tiene el mismo problema.
           cp zap-ignore-rules.conf zap-reports/zap-ignore-rules.conf
+          # zap-baseline.py agrega "-addonupdate" al arrancar el daemon de ZAP a menos que
+          # se le pase "-silent" via -z (ver docker/zap-api-scan.py en zaproxy/zaproxy) - sin
+          # esto, ZAP intenta descargar/instalar cualquier addon mas nuevo del marketplace
+          # antes de exponer su API, lo que puede consumir el timeout completo de arranque
+          # (600s por defecto) y tumbar el job con "Failed to connect to ZAP after 600
+          # seconds" sin que sea un fallo real del scan (encontrado real en CI).
           docker run --network host --rm \
             -v "$(pwd)/zap-reports:/zap/wrk/:rw" \
             zaproxy/zap-stable zap-baseline.py \
@@ -56,6 +62,7 @@ jobs:
             -r baseline-report.html \
             -x baseline-report.xml \
             -J baseline-report.json \
+            -z "-silent" \
             -I
           # zap-baseline.py sale con codigo != 0 en WARN/FAIL segun sus propias reglas
           # (-I evita que WARN por si solo tumbe el job); el quality gate real de HIGH
@@ -124,6 +131,11 @@ jobs:
           # archivo - zaproxy/zap-stable corre como uid 1000 no-root dentro del contenedor.
           chmod -R 777 zap-reports
           cp zap-ignore-rules.conf zap-reports/zap-ignore-rules.conf
+          # -z "-silent": ver el mismo comentario en el job "OWASP ZAP Baseline Scan
+          # (Frontend)" de este archivo - evita que ZAP se auto-actualice al arrancar y
+          # agote el timeout de 600s antes de exponer su API ("Failed to connect to ZAP
+          # after 600 seconds", encontrado real en CI, no relacionado a ningun cambio de
+          # codigo de la app).
           docker run --network host --rm \
             -v "$(pwd)/zap-reports:/zap/wrk/:rw" \
             zaproxy/zap-stable zap-api-scan.py \
@@ -133,6 +145,7 @@ jobs:
             -r api-scan-report.html \
             -x api-scan-report.xml \
             -J api-scan-report.json \
+            -z "-silent" \
             -I
 
       - name: Quality gate — 0 vulnerabilidades HIGH
@@ -152,7 +165,19 @@ jobs:
   dependency-check:
     name: OWASP Dependency-Check
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Encontrado real en CI (2026-07): incluso con NVD_API_KEY configurada, la primera
+    # sincronizacion del historico completo del NVD se canceló dos veces por timeout (30
+    # min primero, 90 min despues) sin completar - el log ya no mostraba "API Key was not
+    # provided", asi que la key SI se estaba usando, simplemente la sincronizacion en vivo
+    # es demasiado lenta/pesada para bloquear un PR con ella. Se desacopla: este job NUNCA
+    # sincroniza en vivo (dependencyCheckAutoUpdate=false, siempre usa el cache ya
+    # restaurado); el unico que sincroniza de verdad es el workflow programado
+    # "dependency-check-update.yml" (semanal, sin nadie esperando, con su propio timeout
+    # generoso). Por eso "Cache NVD database" usa actions/cache/restore (solo lectura, sin
+    # el auto-save al final del job que trae actions/cache normal) - si este job guardara
+    # su propia copia sin sincronizar, podria "ganarle" el slot de cache de la semana al
+    # job programado antes de que este alcance a escribir los datos realmente actualizados.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -163,24 +188,18 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Compute cache week
-        id: week
-        run: echo "week=$(date +%Y-W%V)" >> "$GITHUB_OUTPUT"
-
-      # La base de datos de CVEs del NVD cambia con el tiempo; se cachea por semana para
-      # acelerar corridas repetidas sin quedar demasiado desactualizada.
-      - name: Cache NVD database
-        uses: actions/cache@v4
+      # Solo lectura (restore-keys ya cae al cache de la semana mas reciente disponible,
+      # escrito por dependency-check-update.yml) - nunca escribe, ver comentario arriba.
+      - name: Restore NVD database from cache
+        uses: actions/cache/restore@v4
         with:
           path: backend/build/dependency-check-data
-          key: nvd-db-${{ steps.week.outputs.week }}
+          key: nvd-db-${{ github.run_id }}-unused
           restore-keys: nvd-db-
 
-      - name: Run OWASP Dependency-Check
+      - name: Run OWASP Dependency-Check (sin sincronizar — usa el cache ya restaurado)
         working-directory: backend
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: ./gradlew dependencyCheckAnalyze
+        run: ./gradlew dependencyCheckAnalyze -PdependencyCheckAutoUpdate=false
 
       - name: Upload Dependency-Check report
         uses: actions/upload-artifact@v4

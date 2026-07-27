@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import AppShell from '../../src/components/layout/AppShell';
 import ProtectedRoute from '../../src/components/ProtectedRoute';
+import { ToastProvider } from '../../src/context/ToastContext';
 import { useAuth } from '../../src/hooks/useAuth';
 import DashboardPage from '../../src/pages/DashboardPage';
 import ProductsPage from '../../src/pages/ProductsPage';
@@ -62,18 +63,20 @@ function renderDashboard() {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/dashboard']}>
-        <Routes>
-          <Route path="/" element={<p>Página de inicio</p>} />
-          <Route element={<ProtectedRoute />}>
-            <Route element={<AppShell />}>
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/products" element={<ProductsPage />} />
-              <Route path="/stock" element={<StockPage />} />
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/dashboard']}>
+          <Routes>
+            <Route path="/" element={<p>Página de inicio</p>} />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AppShell />}>
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/products" element={<ProductsPage />} />
+                <Route path="/stock" element={<StockPage />} />
+              </Route>
             </Route>
-          </Route>
-        </Routes>
-      </MemoryRouter>
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
