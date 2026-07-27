@@ -10,6 +10,7 @@ function renderAt(path) {
   useAuth.mockReturnValue({
     user: { preferred_username: 'admin@test.com' },
     logout: vi.fn(),
+    hasScope: () => false,
   });
 
   return render(

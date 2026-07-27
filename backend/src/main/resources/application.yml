@@ -36,6 +36,13 @@ keycloak:
   issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8080/realms/inventario}
   # JWKS URI usado por el backend para obtener las llaves de verificacion (red interna de Docker)
   jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8080/realms/inventario/protocol/openid-connect/certs}
+  admin:
+    # SEC-007: base de la Keycloak Admin REST API (KeycloakAdminClient) - red interna de
+    # Docker, igual criterio que jwk-set-uri. El client-id esta fijo ("inventario-backend",
+    # ver KeycloakAdminClient.CLIENT_ID) por la misma razon que JwtAuthConverter.RESOURCE_ID.
+    base-uri: ${KEYCLOAK_ADMIN_BASE_URI:http://localhost:8080}
+    realm: ${KEYCLOAK_REALM:inventario}
+    client-secret: ${KEYCLOAK_CLIENT_SECRET:inventario-backend-secret}
 
 cors:
   # Origenes permitidos para llamadas desde el navegador (frontend React/Vite). Lista separada por comas.

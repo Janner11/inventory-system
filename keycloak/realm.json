@@ -239,7 +239,8 @@
       "enabled": true,
       "serviceAccountClientId": "inventario-backend",
       "clientRoles": {
-        "inventario-backend": ["actuator:view"]
+        "inventario-backend": ["actuator:view"],
+        "realm-management": ["manage-users", "view-users", "query-users"]
       }
     }
   ]

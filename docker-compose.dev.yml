@@ -92,6 +92,11 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-inventario_pass}
       KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI:-http://localhost:8080/realms/inventario}
       KEYCLOAK_JWK_SET_URI: ${KEYCLOAK_JWK_SET_URI:-http://keycloak:8080/realms/inventario/protocol/openid-connect/certs}
+      # SEC-007: Keycloak Admin REST API (KeycloakAdminClient) - red interna de Docker,
+      # mismo criterio que KEYCLOAK_JWK_SET_URI.
+      KEYCLOAK_ADMIN_BASE_URI: ${KEYCLOAK_ADMIN_BASE_URI:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-inventario}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-inventario-backend-secret}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
       # OBS-001: instrumentacion automatica via OpenTelemetry Java Agent (JAVA_TOOL_OPTIONS

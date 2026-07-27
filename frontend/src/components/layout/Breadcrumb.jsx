@@ -10,6 +10,7 @@ const ROUTES = [
   { pattern: '/stock', crumbs: [{ label: 'Stock' }] },
   { pattern: '/audit', crumbs: [{ label: 'Auditoría' }] },
   { pattern: '/reports', crumbs: [{ label: 'Reportes' }] },
+  { pattern: '/users', crumbs: [{ label: 'Usuarios' }] },
 ];
 
 function resolveCrumbs(pathname) {
