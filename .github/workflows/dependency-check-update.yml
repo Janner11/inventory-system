@@ -14,6 +14,15 @@ on:
     - cron: '0 3 * * 1'  # Lunes 03:00 UTC
   workflow_dispatch:
 
+# Evita que 2+ disparos manuales (o un disparo manual solapado con el cron) corran en
+# paralelo - varias corridas simultaneas con la misma NVD_API_KEY compiten por el mismo
+# rate limit (pensado para un solo cliente) y se frenan entre si en vez de ir mas rapido.
+# cancel-in-progress: false -> un disparo nuevo espera en cola en vez de matar una corrida
+# que ya venia avanzada.
+concurrency:
+  group: dependency-check-nvd-update
+  cancel-in-progress: false
+
 jobs:
   update-nvd-database:
     name: Sync NVD database
