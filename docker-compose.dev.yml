@@ -352,18 +352,25 @@ services:
       # de intentar auto-detectarlo.
       TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
       # Encontrado real (Deploy Staging): en Docker Desktop para macOS, el daemon real
-      # (corriendo en la VM de Docker Desktop) solo puede resolver como bind mount una ruta
-      # que sea una ruta real de macOS ya compartida con esa VM (tipicamente cualquier cosa
-      # bajo /Users/...) - no una ruta que solo tiene sentido DENTRO del contenedor de
-      # Jenkins que hizo la llamada (ni "/var/jenkins_home/...", ni "/workspace-repo"),
-      # aunque ese contenedor SI vea archivos reales ahi via sus propios bind mounts. Por
-      # eso hace falta la ruta real de macOS explicita para que docker-compose.staging.yml
-      # (levantado desde DENTRO de Jenkins, Docker-outside-of-Docker) pueda resolver sus
-      # bind mounts relativos ("./observability/...") correctamente - ver Jenkinsfile,
-      # stage "Deploy Staging" (COMPOSE_PROJECT_DIR) y docs/cicd/jenkins.md. En un host
-      # Linux real (sin la capa de traduccion de Docker Desktop) este problema no existe:
-      # las rutas del contenedor y del daemon ya coinciden de forma natural.
-      HOST_WORKSPACE_ROOT: /Users/janner/Desktop/inventory-system/jenkins-workspace
+      # (corriendo en la VM/WSL2 de Docker Desktop) solo puede resolver como bind mount una
+      # ruta real del host ya compartida con esa VM - no una ruta que solo tiene sentido
+      # DENTRO del contenedor de Jenkins que hizo la llamada (ni "/var/jenkins_home/...", ni
+      # "/workspace-repo"), aunque ese contenedor SI vea archivos reales ahi via sus propios
+      # bind mounts. Por eso hace falta la ruta real del host explicita para que
+      # docker-compose.staging.yml y el stage "Trivy Scan" (levantados desde DENTRO de
+      # Jenkins, Docker-outside-of-Docker) puedan resolver sus bind mounts correctamente -
+      # ver Jenkinsfile (COMPOSE_PROJECT_DIR / Trivy Scan) y docs/cicd/jenkins.md. En un host
+      # Linux real (sin la capa de traduccion de Docker Desktop) este problema no existe: las
+      # rutas del contenedor y del daemon ya coinciden de forma natural.
+      #
+      # Especifica de cada maquina (macOS: /Users/...; Windows+Docker Desktop: formato POSIX
+      # "/c/Users/...", NO "C:/Users/..." - "docker compose" corre dentro del contenedor
+      # Linux de Jenkins y solo reconoce como absoluto un path que empiece con "/", aunque el
+      # daemon real de Docker Desktop resuelva ambos formatos igual) - NUNCA hardcodear la
+      # ruta de un desarrollador particular aca; cada quien la define en su propio .env
+      # (gitignored, sin valor por defecto - sin ella el Jenkinsfile cae a "$(pwd)", que solo
+      # funciona en un host Linux real sin esta capa de traduccion).
+      HOST_WORKSPACE_ROOT: ${HOST_WORKSPACE_ROOT:-}
     ports:
       - "${JENKINS_PORT:-8095}:8080"
       - "${JENKINS_AGENT_PORT:-50000}:50000"
