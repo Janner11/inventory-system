@@ -70,12 +70,20 @@
   border: 1px solid var(--color-border);
   border-radius: var(--border-radius);
   background-color: #fff;
+  /* Sin esto, un hijo con contenido ancho (ej. "US$1,000,045,767.94", sin espacios
+     donde cortar) evita que el item de grid se encoja al ancho real de su columna
+     (minmax en .kpiGrid) y el valor queda cortado por el borde de la tarjeta. */
+  min-width: 0;
 }
 
 .kpiValue {
   font-size: 1.75rem;
   font-weight: 700;
   color: var(--color-primary);
+  /* Permite que un número largo sin espacios (moneda, ids) rompa de línea en vez de
+     desbordar o quedar cortado por la tarjeta. */
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .kpiValueWarning {
