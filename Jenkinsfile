@@ -97,18 +97,28 @@ pipeline {
             // spring-security-web) queda documentado como riesgo aceptado en
             // backend/.trivyignore (ver CLAUDE.md, "Detalle de CICD-004") - todo lo demas
             // bloquea el pipeline de verdad, igual que en GitHub Actions.
+            //
+            // La fuente de los bind mounts usa HOST_WORKSPACE_ROOT en vez de "$(pwd)" por el
+            // mismo motivo que en "Deploy Staging"/"E2E Tests" (Docker Desktop): este "docker
+            // run" habla con el daemon real via el socket montado, y ese daemon resuelve
+            // bind mounts contra el filesystem real del host, no contra el filesystem propio
+            // del contenedor de Jenkins que emite el comando.
             steps {
                 sh '''
                     mkdir -p trivy-reports
+                    WORKSPACE_DIR="$(pwd)"
+                    if [ -n "${HOST_WORKSPACE_ROOT:-}" ]; then
+                      WORKSPACE_DIR="${HOST_WORKSPACE_ROOT}/${JOB_NAME}"
+                    fi
                     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                      -v "$(pwd)/backend/.trivyignore:/tmp/.trivyignore:ro" \
-                      -v "$(pwd)/trivy-reports:/reports" \
+                      -v "${WORKSPACE_DIR}/backend/.trivyignore:/tmp/.trivyignore:ro" \
+                      -v "${WORKSPACE_DIR}/trivy-reports:/reports" \
                       aquasec/trivy image --severity CRITICAL --exit-code 1 \
                       --ignorefile /tmp/.trivyignore \
                       --format json --output /reports/backend-trivy.json \
                       "${BACKEND_IMAGE}"
                     docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                      -v "$(pwd)/trivy-reports:/reports" \
+                      -v "${WORKSPACE_DIR}/trivy-reports:/reports" \
                       aquasec/trivy image --severity CRITICAL --exit-code 1 \
                       --format json --output /reports/frontend-trivy.json \
                       "${FRONTEND_IMAGE}"
