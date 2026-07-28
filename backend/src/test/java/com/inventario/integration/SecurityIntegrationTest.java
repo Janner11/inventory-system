@@ -153,13 +153,17 @@ class SecurityIntegrationTest {
     }
 
     @Test
-    void auditorSinScopeDeProducto_noPuedeListarProductos() {
+    void auditorConAuditView_puedeListarProductosParaElSelectorDeAuditPage() {
+        // SEC-008: antes bloqueado a proposito (403); el propio AuditPage.jsx necesita
+        // listar productos para su selector, y AUDITOR (audit:view, sin product:view) es
+        // el unico rol pensado para esa pagina - sin esto, nunca podia usarla. Verificado
+        // con un token real de Keycloak (auditor@test.com), no solo mockeado.
         String token = realAccessToken("auditor@test.com", "auditor123");
 
         given()
                 .header("Authorization", "Bearer " + token)
                 .when().get("/products")
-                .then().statusCode(403);
+                .then().statusCode(200);
     }
 
     @Test

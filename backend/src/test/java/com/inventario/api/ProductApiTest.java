@@ -153,6 +153,16 @@ class ProductApiTest extends AbstractApiTest {
     }
 
     @Test
+    void getAllProducts_conSoloAuditViewScope_devuelve200() {
+        // SEC-008: AUDITOR (audit:view, report:view - sin product:view) necesita poder
+        // listar productos para el selector de AuditPage.jsx.
+        given()
+                .header("Authorization", "Bearer " + AUDITOR_TOKEN)
+                .when().get("/products")
+                .then().statusCode(200);
+    }
+
+    @Test
     void getAllProducts_conPaginacion_devuelvePaginaConMetadatosCorrectos() {
         String category = "PAG-" + shortId();
         for (int i = 0; i < 3; i++) {

@@ -45,7 +45,11 @@ public class ProductController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('SCOPE_product:view')")
+    // AUDITOR (product:view -> no, audit:view -> si, seccion 6) necesita poder listar
+    // productos para elegir cual auditar en AuditPage.jsx - sin esto, el selector de esa
+    // pagina nunca se llena y el rol construido especificamente para "Consultar auditoria
+    // del sistema" no puede usar la unica pagina hecha para eso.
+    @PreAuthorize("hasAnyAuthority('SCOPE_product:view', 'SCOPE_audit:view')")
     @Operation(summary = "Listar productos paginados, con filtros dinamicos opcionales")
     @ApiResponse(responseCode = "200", description = "Pagina de productos")
     @ApiResponse(responseCode = "400", description = "Parametro invalido (status/precio/orden)", content = @Content)
@@ -100,7 +104,10 @@ public class ProductController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('SCOPE_product:view')")
+    // Mismo motivo que en getAllProducts() - AUDITOR llega aqui haciendo click en un
+    // producto desde el Dashboard ("Productos en alerta"/"Mas movidos", ambos con
+    // report:view) o desde el selector de AuditPage.
+    @PreAuthorize("hasAnyAuthority('SCOPE_product:view', 'SCOPE_audit:view')")
     @Operation(summary = "Obtener un producto por su id")
     @ApiResponse(responseCode = "200", description = "Producto encontrado")
     @ApiResponse(responseCode = "401", description = "No autenticado", content = @Content)

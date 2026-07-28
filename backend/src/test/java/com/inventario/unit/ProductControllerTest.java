@@ -46,6 +46,7 @@ class ProductControllerTest {
     private static final String VIEW_SCOPE = "SCOPE_product:view";
     private static final String MANAGE_SCOPE = "SCOPE_product:manage";
     private static final String REPORT_VIEW_SCOPE = "SCOPE_report:view";
+    private static final String AUDIT_VIEW_SCOPE = "SCOPE_audit:view";
 
     @Autowired
     private MockMvc mockMvc;
@@ -101,6 +102,18 @@ class ProductControllerTest {
     void getAllProducts_withoutViewScope_returns403() throws Exception {
         mockMvc.perform(get("/api/products").with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getAllProducts_withOnlyAuditViewScope_returns200() throws Exception {
+        // SEC-008: AUDITOR (audit:view, sin product:view) necesita poder listar productos
+        // para elegir cual auditar en AuditPage.jsx - ver el comentario en el controller.
+        given(productService.getAllProducts(any(Pageable.class), any()))
+                .willReturn(new PageImpl<>(List.of(buildResponse(UUID.randomUUID(), "LAP-001"))));
+
+        mockMvc.perform(get("/api/products").with(jwt().authorities(new SimpleGrantedAuthority(AUDIT_VIEW_SCOPE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].sku").value("LAP-001"));
     }
 
     @Test
@@ -198,6 +211,26 @@ class ProductControllerTest {
 
         mockMvc.perform(get("/api/products/{id}", id).with(jwt().authorities(new SimpleGrantedAuthority(VIEW_SCOPE))))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getProductById_withOnlyAuditViewScope_returns200() throws Exception {
+        // SEC-008: AUDITOR llega aca haciendo click en un producto desde el Dashboard
+        // (widgets con report:view) o desde AuditPage - ver el comentario en el controller.
+        UUID id = UUID.randomUUID();
+        given(productService.getProductById(id)).willReturn(buildResponse(id, "LAP-001"));
+
+        mockMvc.perform(get("/api/products/{id}", id).with(jwt().authorities(new SimpleGrantedAuthority(AUDIT_VIEW_SCOPE))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id.toString()));
+    }
+
+    @Test
+    void getProductById_withoutAnyViewScope_returns403() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(get("/api/products/{id}", id).with(jwt().authorities(new SimpleGrantedAuthority(MANAGE_SCOPE))))
+                .andExpect(status().isForbidden());
     }
 
     @Test
