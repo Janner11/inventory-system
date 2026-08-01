@@ -77,16 +77,14 @@ pipeline {
         }
 
         stage('Build Docker Images') {
+            // La imagen del frontend es domain-agnostic (docker-entrypoint.sh inyecta
+            // las variables VITE_* en runtime, no en build-time — ver
+            // frontend/Dockerfile), así que este build ya no pasa --build-arg; el
+            // stage "Deploy Staging" las pasa vía .env.staging al desplegar
+            // docker-compose.staging.yml, igual que en ci.yml (CICD-001).
             steps {
                 sh "docker build -t ${BACKEND_IMAGE} backend/"
-                sh """
-                    docker build \
-                      --build-arg VITE_API_BASE_URL=http://localhost:8082/api \
-                      --build-arg VITE_KEYCLOAK_URL=http://localhost:8180 \
-                      --build-arg VITE_KEYCLOAK_REALM=inventario \
-                      --build-arg VITE_KEYCLOAK_CLIENT_ID=inventario-frontend \
-                      -t ${FRONTEND_IMAGE} frontend/
-                """
+                sh "docker build -t ${FRONTEND_IMAGE} frontend/"
             }
         }
 

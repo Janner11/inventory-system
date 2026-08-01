@@ -110,11 +110,71 @@ limitación ya conocida desde CICD-001 (staging tuvo el mismo problema con
 | Seed de datos de prueba | Opcional (`SEED=true` → `seed-staging.sh`) | Ninguna ruta de código lo permite | — |
 | Puertos de host | Rango propio (backend 8082, etc.) | Rango propio distinto (backend 8083, etc.) — los 3 ambientes corren a la vez sin colisión | — |
 | TLS | HTTP plano (`10106` de ZAP, aceptado explícitamente) | HTTP plano | Terminación TLS en un reverse proxy (nginx/Traefik) delante del `frontend` y del `backend` — no lo resuelve ningún Dockerfile de este proyecto |
-| Dominio | `localhost` fijo | `localhost` fijo (el `.example` sugiere un dominio simulado, pero la verificación real fue con `localhost`) | Dominio real — requiere actualizar `KC_HOSTNAME`, `redirectUris`/`webOrigins` de `inventario-frontend` en `keycloak/realm.json`, y las 4 variables `VITE_*` como build-args del frontend (ver [`docs/security/keycloak.md`](security/keycloak.md)) |
+| Dominio | `localhost` fijo | `localhost` fijo (el `.example` sugiere un dominio simulado, pero la verificación real fue con `localhost`) | Dominio real — la imagen del frontend ya es domain-agnostic (ver sección siguiente); falta actualizar `KC_HOSTNAME` y `redirectUris`/`webOrigins` de `inventario-frontend` en `keycloak/realm.json`, y sumar un reverse proxy con TLS |
 | Secrets | `.env.staging` con placeholders `CAMBIAR_*` | `.env.production` con placeholders `CAMBIAR_*` | Gestor de secretos real (no un `.env` en disco) — Docker Secrets, Vault, o el mecanismo del proveedor cloud elegido |
 | Base de datos | Contenedor Postgres del mismo `docker-compose` | Contenedor Postgres del mismo `docker-compose` | Servicio gestionado (backups automáticos, alta disponibilidad) fuera del `docker-compose` |
 | Réplicas / escalado | 1 instancia de cada servicio | 1 instancia de cada servicio | Backend sin estado (JWT, sin sesión en servidor) — escalable horizontalmente detrás de un load balancer sin cambios de código |
 | Observabilidad | Alertmanager con un webhook local (`alert-webhook-receiver`, solo desarrollo) | Alertmanager con un webhook local (mismo mecanismo) | `receivers` reales (Slack/email/PagerDuty) en `observability/alertmanager/alertmanager.yml` |
+
+### Cómo apuntar producción a un dominio real
+
+> Sección agregada tras una pregunta directa del usuario ("¿es posible hacer
+> que producción funcione con un dominio sin dañar la corrida local?"). Scope
+> elegido explícitamente: dejar la configuración lista y verificada para
+> cualquier dominio, sin desplegar contra un servidor real (no hay uno
+> disponible en este proyecto académico) — ver "Explícitamente diferido"
+> abajo para lo que sigue pendiente de un servidor real.
+
+**El frontend ya es domain-agnostic — no hace falta reconstruir la imagen
+por cambiar de dominio.** Antes de este cambio, las 4 variables `VITE_*`
+(`VITE_API_BASE_URL`, `VITE_KEYCLOAK_URL`, `VITE_KEYCLOAK_REALM`,
+`VITE_KEYCLOAK_CLIENT_ID`) se horneaban en el bundle de JS en **build-time**
+(`--build-arg`, Vite las lee vía `import.meta.env` solo durante `vite
+build`) — la misma imagen publicada en GHCR para staging nunca hubiera
+servido para un dominio de producción distinto sin reconstruirla con otros
+build-args. Ahora se inyectan en **runtime**: `frontend/docker-entrypoint.sh`
+genera `/usr/share/nginx/html/env-config.js` a partir de las variables de
+entorno reales del contenedor justo antes de arrancar nginx, `index.html`
+carga ese archivo antes que el bundle principal, y
+`frontend/src/config/env.js` lee `window.__ENV__` con fallback a
+`import.meta.env` (para que `npm run dev` en local siga funcionando exactamente
+igual que antes, vía `frontend/.env`). Verificado corriendo la imagen real
+con `VITE_KEYCLOAK_URL=https://auth.midominio.com` — el navegador (Playwright)
+efectivamente intentó conectarse a ese host, no a un default de `localhost`.
+
+**Los 3 pasos reales para apuntar `docker-compose.production.yml` a un
+dominio real** (sin tocar dev ni staging — cada ambiente tiene su propio
+`.env.*`/compose):
+
+1. **`.env.production`** — cambiar `KEYCLOAK_HOSTNAME`, `KEYCLOAK_ISSUER_URI`,
+   `CORS_ALLOWED_ORIGINS` y las 4 variables `VITE_*` de `inventario.example.com`
+   al dominio real (mismo archivo, ya parametrizado — no requiere editar
+   ningún compose ni Dockerfile).
+2. **`keycloak/realm.json`** — agregar el dominio real a `redirectUris`/
+   `webOrigins` del client `inventario-frontend` (hoy solo tiene los 3
+   orígenes `localhost` de dev/staging/production, sección "Seguridad y
+   Autorización" de `CLAUDE.md`) — sin esto, Keycloak rechaza el login con
+   `Invalid parameter: redirect_uri`, el mismo error ya documentado para
+   staging.
+3. **Un reverse proxy con TLS delante de los 3 servicios** (Keycloak,
+   backend, frontend) — sigue siendo el único punto realmente no resuelto.
+   Ninguno de los servicios de este proyecto termina HTTPS por sí mismo; un
+   dominio público real necesita algo (nginx, Caddy, Traefik) escuchando en
+   `:443` con un certificado válido y reenviando a los puertos internos. No
+   se implementó porque requiere un servidor con DNS apuntando a él para
+   poder emitir/verificar un certificado real (Let's Encrypt u otro) — no
+   hay forma de probarlo sin ese servidor.
+
+**Explícitamente diferido (no es parte de este cambio):**
+
+- El reverse proxy/TLS en sí (paso 3 arriba) — bloqueado por no tener un
+  servidor+dominio real contra el cual verificarlo, no por falta de
+  parametrización del resto del stack.
+- Gestor de secretos real, base de datos gestionada, escalado horizontal —
+  ya documentados como guía en la tabla de arriba, sin cambios.
+- Agregar el dominio real a `keycloak/realm.json` — no se agregó un dominio
+  inventado a un archivo real del proyecto; el paso 2 de arriba es la
+  instrucción para cuando exista uno real.
 
 ### Pasos para un despliegue real (más allá de este proyecto académico)
 
@@ -122,15 +182,17 @@ limitación ya conocida desde CICD-001 (staging tuvo el mismo problema con
    base de datos gestionada si aplica).
 2. Publicar las imágenes a un tag de versión real (`docker-push` ya las deja
    en GHCR en cada push a `main` — usar ese tag, no `:latest`, para un
-   despliegue reproducible).
+   despliegue reproducible). La imagen del frontend no necesita reconstruirse
+   por cambiar de dominio (ver sección anterior).
 3. Adaptar `keycloak/realm.json` (o gestionar el realm directamente en el
    Keycloak de producción) con el dominio real en `redirectUris`/`webOrigins`.
-4. Construir el frontend con los `--build-arg VITE_*` apuntando a las URLs
-   reales de producción (`frontend/Dockerfile`, ARGs ya parametrizados desde
-   TEST-005/CICD-004).
+4. Pasar las 4 variables `VITE_*` reales como `environment:` del contenedor
+   `frontend` (ya wireadas en `docker-compose.production.yml`, solo hay que
+   editar `.env.production`) — sin reconstruir ninguna imagen.
 5. Desplegar `docker-compose.production.yml` (o su traducción a
    Kubernetes/ECS/lo que decida el equipo) con secrets reales en
-   `.env.production`, sin ningún valor por defecto de desarrollo.
+   `.env.production`, sin ningún valor por defecto de desarrollo, detrás de
+   un reverse proxy con TLS real.
 6. Verificar `/actuator/health` del backend y `/healthz` del frontend antes
    de enrutar tráfico real (`scripts/wait-for-it.sh`/`scripts/start-production.sh`
    ya implementan este chequeo).

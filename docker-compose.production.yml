@@ -148,11 +148,20 @@ services:
       - inventario-production-network
 
   frontend:
-    # Misma imagen publicada que staging; las variables VITE_* ya estan horneadas en el
-    # bundle desde el build (build-args, no env vars de runtime - ver frontend/Dockerfile).
+    # Misma imagen publicada que staging, domain-agnostic - las variables VITE_* se
+    # inyectan en RUNTIME (docker-entrypoint.sh genera env-config.js al arrancar, ver
+    # frontend/Dockerfile), no horneadas en el build. Para apuntar este ambiente a un
+    # dominio real, solo hay que cambiar estos 4 valores (mas KEYCLOAK_HOSTNAME/
+    # CORS_ALLOWED_ORIGINS abajo y redirectUris/webOrigins en keycloak/realm.json) -
+    # ver "Como apuntar produccion a un dominio real" en docs/deployment.md.
     image: ${FRONTEND_IMAGE}
     container_name: inventario-production-frontend
     restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+      VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL}
+      VITE_KEYCLOAK_REALM: ${VITE_KEYCLOAK_REALM}
+      VITE_KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID}
     ports:
       - "${FRONTEND_PORT:-8091}:8080"
     depends_on:

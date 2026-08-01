@@ -144,14 +144,19 @@ services:
       - inventario-staging-network
 
   frontend:
-    # Imagen ya construida y publicada (CICD-001); las variables VITE_* ya están
-    # horneadas en el bundle desde el build (Vite las lee en build-time, no en
-    # runtime — ver frontend/Dockerfile) así que no se pasan como variables de entorno
-    # del contenedor, solo como --build-arg al construir la imagen (ver
-    # .env.staging.example y "Cómo construir las imágenes" en docs/staging.md).
+    # Imagen ya construida y publicada (CICD-001), domain-agnostic — las variables
+    # VITE_* se inyectan en RUNTIME (docker-entrypoint.sh genera env-config.js al
+    # arrancar, ver frontend/Dockerfile), no horneadas en el build. La misma imagen
+    # sirve para staging/production/un dominio real futuro con solo cambiar estos
+    # valores, sin reconstruirla.
     image: ${FRONTEND_IMAGE}
     container_name: inventario-staging-frontend
     restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+      VITE_KEYCLOAK_URL: ${VITE_KEYCLOAK_URL}
+      VITE_KEYCLOAK_REALM: ${VITE_KEYCLOAK_REALM}
+      VITE_KEYCLOAK_CLIENT_ID: ${VITE_KEYCLOAK_CLIENT_ID}
     ports:
       - "${FRONTEND_PORT:-8090}:8080"
     depends_on:

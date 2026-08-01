@@ -58,12 +58,12 @@ START_TS=$(date +%s)
 if [ "$BUILD_LOCAL" = "true" ]; then
   echo "start-staging: BUILD_LOCAL=true — construyendo ${BACKEND_IMAGE} y ${FRONTEND_IMAGE} desde el código fuente local"
   docker build -t "${BACKEND_IMAGE}" ./backend
-  docker build \
-    --build-arg VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
-    --build-arg VITE_KEYCLOAK_URL="${VITE_KEYCLOAK_URL}" \
-    --build-arg VITE_KEYCLOAK_REALM="${VITE_KEYCLOAK_REALM}" \
-    --build-arg VITE_KEYCLOAK_CLIENT_ID="${VITE_KEYCLOAK_CLIENT_ID}" \
-    -t "${FRONTEND_IMAGE}" ./frontend
+  # La imagen del frontend es domain-agnostic: las variables VITE_* se inyectan en
+  # runtime (docker-entrypoint.sh, frontend/Dockerfile), no en build-time, así que
+  # este build ya no necesita --build-arg. Ese mismo docker-compose.staging.yml ya
+  # las pasa como "environment:" del contenedor al arrancarlo (ver "environment:"
+  # de este mismo .env.staging).
+  docker build -t "${FRONTEND_IMAGE}" ./frontend
 fi
 
 echo "start-staging: [1/4] levantando infraestructura (postgres, keycloak, observabilidad) ..."
