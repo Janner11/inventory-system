@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>k6 — Resultados de Pruebas de Rendimiento</title>
+<style>
+  :root {
+    --page:        #f9f9f7;
+    --surface:     #fcfcfb;
+    --ink:         #0b0b0b;
+    --ink-2:       #52514e;
+    --muted:       #898781;
+    --gridline:    #e1e0d9;
+    --baseline:    #c3c2b7;
+    --border:      rgba(11,11,11,0.10);
+    --accent:      #2a78d6;
+    --accent-wash: #eaf1fb;
+    --good:        #0ca30c;
+    --good-wash:   #e6f6e6;
+    --warning:     #fab219;
+    --warning-wash:#fff6e2;
+    --critical:    #d03b3b;
+    --critical-wash:#fbe9e9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      --page:        #0d0d0d;
+      --surface:     #1a1a19;
+      --ink:         #ffffff;
+      --ink-2:       #c3c2b7;
+      --muted:       #898781;
+      --gridline:    #2c2c2a;
+      --baseline:    #383835;
+      --border:      rgba(255,255,255,0.10);
+      --accent:      #3987e5;
+      --accent-wash: #17233a;
+      --good:        #0ca30c;
+      --good-wash:   #123018;
+      --warning:     #fab219;
+      --warning-wash:#332609;
+      --critical:    #e66767;
+      --critical-wash:#3a1414;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page:        #0d0d0d;
+    --surface:     #1a1a19;
+    --ink:         #ffffff;
+    --ink-2:       #c3c2b7;
+    --muted:       #898781;
+    --gridline:    #2c2c2a;
+    --baseline:    #383835;
+    --border:      rgba(255,255,255,0.10);
+    --accent:      #3987e5;
+    --accent-wash: #17233a;
+    --good:        #0ca30c;
+    --good-wash:   #123018;
+    --warning:     #fab219;
+    --warning-wash:#332609;
+    --critical:    #e66767;
+    --critical-wash:#3a1414;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 980px; margin: 0 auto; padding: 40px 20px 64px; }
+
+  header.top { margin-bottom: 28px; }
+  .eyebrow {
+    font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 8px; font-weight: 600;
+  }
+  h1 { font-size: 26px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { font-size: 14px; color: var(--ink-2); margin: 0; max-width: 62ch; line-height: 1.5; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px 24px;
+    margin-bottom: 20px;
+  }
+  .card-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px; margin-bottom: 4px;
+  }
+  .card-title { font-size: 16px; font-weight: 600; margin: 0; }
+  .card-meta {
+    font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .card-note { font-size: 12.5px; color: var(--ink-2); margin: 2px 0 16px; line-height: 1.5; }
+
+  /* KPI row (stat tiles) */
+  .kpi-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  }
+  .kpi {
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .kpi-label {
+    font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px;
+  }
+  .kpi-value { font-size: 24px; font-weight: 600; line-height: 1.1; }
+  .kpi-target { font-size: 11.5px; color: var(--muted); }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  }
+  .status-dot.good { background: var(--good); }
+  .status-dot.warning { background: var(--warning); }
+  .status-dot.critical { background: var(--critical); }
+  .kpi.good { background: var(--good-wash); }
+  .kpi.warning { background: var(--warning-wash); }
+  .kpi.critical { background: var(--critical-wash); }
+  .kpi-pill {
+    font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
+    width: fit-content; letter-spacing: 0.02em;
+  }
+  .kpi-pill.good { background: var(--good); color: #fff; }
+  .kpi-pill.warning { background: var(--warning); color: #241a00; }
+  .kpi-pill.critical { background: var(--critical); color: #fff; }
+
+  .extra-row { margin-top: 16px; display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 720px) {
+    .extra-row.two-col { grid-template-columns: 1.3fr 1fr; }
+  }
+
+  /* Bar chart (stress test breakpoint) */
+  .chart-wrap { overflow-x: auto; }
+  .bar-chart { min-width: 420px; }
+  .bar-chart svg { display: block; width: 100%; height: auto; }
+  .bar-legend {
+    display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px;
+    font-size: 11.5px; color: var(--ink-2);
+  }
+  .bar-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .bar-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  /* Root cause callout */
+  .callout {
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 6px; padding: 12px 14px; background: var(--accent-wash);
+    font-size: 12.5px; color: var(--ink-2); line-height: 1.55;
+  }
+  .callout strong { color: var(--ink); }
+  .callout code {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+
+  /* Memory tile (soak) */
+  .mem-tile {
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px;
+  }
+  .mem-label { font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
+  .mem-track {
+    position: relative; height: 10px; border-radius: 999px;
+    background: var(--accent-wash); overflow: hidden; margin-bottom: 8px;
+  }
+  .mem-fill { position: absolute; inset: 0; width: 10.8%; background: var(--accent); border-radius: 999px; }
+  .mem-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .mem-detail { font-size: 12px; color: var(--ink-2); margin-top: 10px; line-height: 1.5; }
+
+  footer.foot {
+    margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--gridline);
+    font-size: 11.5px; color: var(--muted); line-height: 1.6;
+  }
+  footer.foot code {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    background: var(--gridline); padding: 1px 5px; border-radius: 4px; color: var(--ink-2);
+  }
+
+  table.checks {
+    width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px;
+  }
+  table.checks td { padding: 3px 0; color: var(--ink-2); }
+  table.checks td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="top">
+    <p class="eyebrow">Performance Testing — k6</p>
+    <h1>Resultados de las 3 corridas reales</h1>
+    <p class="sub">
+      Sistema de Gestión de Inventarios — Load, Stress y Soak test corridos contra el
+      stack completo (<code style="font-family:ui-monospace,Consolas,monospace">docker-compose.dev.yml</code>).
+      Resumen estático de los resultados ya verificados (TEST-006) — no es un dashboard en vivo.
+    </p>
+  </header>
+
+  <!-- LOAD TEST -->
+  <section class="card">
+    <div class="card-head">
+      <h2 class="card-title">Load Test</h2>
+      <span class="card-meta">50 VU constantes · 5 min</span>
+    </div>
+    <p class="card-note">Carga esperada en operación normal — confirma que el sistema cumple sus SLA bajo tráfico realista.</p>
+
+    <div class="kpi-row">
+      <div class="kpi good">
+        <span class="kpi-pill good">PASS</span>
+        <span class="kpi-label"><span class="status-dot good"></span>Latencia p95</span>
+        <span class="kpi-value">19.55 ms</span>
+        <span class="kpi-target">Umbral: &lt; 500 ms</span>
+      </div>
+      <div class="kpi good">
+        <span class="kpi-pill good">PASS</span>
+        <span class="kpi-label"><span class="status-dot good"></span>Tasa de error</span>
+        <span class="kpi-value">0.40 %</span>
+        <span class="kpi-target">Umbral: &lt; 1 %</span>
+      </div>
+      <div class="kpi good">
+        <span class="kpi-pill good">PASS</span>
+        <span class="kpi-label"><span class="status-dot good"></span>Throughput</span>
+        <span class="kpi-value">128.98 req/s</span>
+        <span class="kpi-target">Umbral: &gt; 100 req/s</span>
+      </div>
+    </div>
+
+    <table class="checks">
+      <tr><td>Checks exitosos</td><td class="num">38,594 / 38,594 (100%)</td></tr>
+      <tr><td>Requests HTTP totales</td><td class="num">38,799 en 5m00.8s</td></tr>
+    </table>
+  </section>
+
+  <!-- STRESS TEST -->
+  <section class="card">
+    <div class="card-head">
+      <h2 class="card-title">Stress Test</h2>
+      <span class="card-meta">Rampa 10 → 50 → 100 → 200 VU · 8 min</span>
+    </div>
+    <p class="card-note">Objetivo: encontrar el punto de quiebre, no exigir que los umbrales se cumplan bajo cualquier carga.</p>
+
+    <div class="kpi-row">
+      <div class="kpi critical">
+        <span class="kpi-pill critical">FAIL</span>
+        <span class="kpi-label"><span class="status-dot critical"></span>Latencia p95 (agregada)</span>
+        <span class="kpi-value">606.82 ms</span>
+        <span class="kpi-target">Umbral: &lt; 500 ms</span>
+      </div>
+      <div class="kpi critical">
+        <span class="kpi-pill critical">FAIL</span>
+        <span class="kpi-label"><span class="status-dot critical"></span>Tasa de error (agregada)</span>
+        <span class="kpi-value">2.54 %</span>
+        <span class="kpi-target">Umbral: &lt; 1 %</span>
+      </div>
+      <div class="kpi good">
+        <span class="kpi-pill good">PASS</span>
+        <span class="kpi-label"><span class="status-dot good"></span>Throughput (agregado)</span>
+        <span class="kpi-value">167.39 req/s</span>
+        <span class="kpi-target">Umbral: &gt; 100 req/s</span>
+      </div>
+    </div>
+
+    <div class="extra-row two-col">
+      <div>
+        <div class="chart-wrap">
+          <div class="bar-chart" role="img" aria-label="Latencia p95 por nivel de carga: hasta 100 VU 20 milisegundos, justo antes de la degradación 93 milisegundos, entre 100 y 150 VU 484 milisegundos, pico de 200 VU 985 milisegundos. La línea de referencia marca el umbral de 500 milisegundos.">
+            <svg viewBox="0 0 420 220" xmlns="http://www.w3.org/2000/svg">
+              <!-- gridline baseline -->
+              <line x1="40" y1="180" x2="410" y2="180" stroke="var(--baseline)" stroke-width="1"/>
+              <!-- SLA threshold line at 500ms -> y = 180 - (500/1000)*150 = 105 -->
+              <line x1="40" y1="105" x2="410" y2="105" stroke="var(--critical)" stroke-width="1" stroke-dasharray="3,3"/>
+              <text x="410" y="100" text-anchor="end" font-size="10" fill="var(--critical)">SLA 500 ms</text>
+
+              <!-- bars: baseline y=180, scale 150px = 1000ms. Paths round only the
+                   top two corners (data-end), square at the baseline. -->
+              <!-- bar 1: ≤100 VU, 20ms -> height=3, r=1.5 -->
+              <path d="M55,180 L55,178.5 Q55,177 56.5,177 L77.5,177 Q79,177 79,178.5 L79,180 Z" fill="var(--good)">
+                <title>≤100 VU: p95 ≈13–20 ms (dentro del SLA)</title>
+              </path>
+              <text x="67" y="196" text-anchor="middle" font-size="10.5" fill="var(--ink-2)">≤100 VU</text>
+              <text x="67" y="170" text-anchor="middle" font-size="10.5" fill="var(--ink)">20 ms</text>
+
+              <!-- bar 2: ~100 VU, 93ms -> height=14, r=4 -->
+              <path d="M139,180 L139,170 Q139,166 143,166 L159,166 Q163,166 163,170 L163,180 Z" fill="var(--good)">
+                <title>~100 VU: p95 ≈93 ms, justo antes del quiebre (dentro del SLA)</title>
+              </path>
+              <text x="151" y="196" text-anchor="middle" font-size="10.5" fill="var(--ink-2)">~100 VU</text>
+              <text x="151" y="158" text-anchor="middle" font-size="10.5" fill="var(--ink)">93 ms</text>
+
+              <!-- bar 3: 100-150 VU, 484ms avg (420-548) -> height=73, r=4 -->
+              <path d="M223,180 L223,111 Q223,107 227,107 L243,107 Q247,107 247,111 L247,180 Z" fill="var(--critical)">
+                <title>100–150 VU: p95 420–548 ms, rompe el SLA de 500 ms</title>
+              </path>
+              <text x="235" y="196" text-anchor="middle" font-size="10.5" fill="var(--ink-2)">100–150 VU</text>
+              <text x="235" y="99" text-anchor="middle" font-size="10.5" fill="var(--ink)">420–548 ms</text>
+
+              <!-- bar 4: 200 VU pico, 985ms -> height=147.75, r=4 -->
+              <path d="M307,180 L307,36.25 Q307,32.25 311,32.25 L327,32.25 Q331,32.25 331,36.25 L331,180 Z" fill="var(--critical)">
+                <title>200 VU (pico): p95 985 ms, peor momento de la corrida</title>
+              </path>
+              <text x="319" y="196" text-anchor="middle" font-size="10.5" fill="var(--ink-2)">200 VU (pico)</text>
+              <text x="319" y="25" text-anchor="middle" font-size="10.5" fill="var(--ink)">985 ms</text>
+            </svg>
+          </div>
+          <div class="bar-legend">
+            <span><i style="background:var(--good)"></i>Dentro del SLA</span>
+            <span><i style="background:var(--critical)"></i>Rompe el SLA (&gt; 500 ms)</span>
+          </div>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>Causa raíz identificada:</strong> no fue la JVM (heap con patrón sano de
+        diente de sierra, sin tendencia de crecimiento). <code>hikaricp_connections_active</code>
+        se queda clavado en exactamente <strong>10</strong> — el
+        <code>maximum-pool-size</code>
+        configurado — justo en el momento en que arranca la degradación. El pool de
+        conexiones a la base de datos se satura entre ~100–150 VU concurrentes.
+      </div>
+    </div>
+  </section>
+
+  <!-- SOAK TEST -->
+  <section class="card">
+    <div class="card-head">
+      <h2 class="card-title">Soak Test</h2>
+      <span class="card-meta">50 VU constantes · 30 min</span>
+    </div>
+    <p class="card-note">Objetivo: detectar degradación o fugas de memoria bajo carga sostenida.</p>
+
+    <div class="kpi-row">
+      <div class="kpi good">
+        <span class="kpi-pill good">PASS</span>
+        <span class="kpi-label"><span class="status-dot good"></span>Latencia p95</span>
+        <span class="kpi-value">53.2 ms</span>
+        <span class="kpi-target">Umbral: &lt; 500 ms</span>
+      </div>
+      <div class="kpi good">
+        <span class="kpi-pill good">PASS</span>
+        <span class="kpi-label"><span class="status-dot good"></span>Tasa de error</span>
+        <span class="kpi-value">0.47 %</span>
+        <span class="kpi-target">Umbral: &lt; 1 %</span>
+      </div>
+      <div class="kpi warning">
+        <span class="kpi-pill warning">FAIL (leve)</span>
+        <span class="kpi-label"><span class="status-dot warning"></span>Throughput</span>
+        <span class="kpi-value">95.01 req/s</span>
+        <span class="kpi-target">Umbral: &gt; 100 req/s</span>
+      </div>
+    </div>
+
+    <div class="extra-row two-col">
+      <div class="callout">
+        <strong>El throughput no cumple por diseño, no por degradación:</strong>
+        <code>soak-test.js</code>
+        usa un <code>sleep(0.5)</code>
+        deliberado (simula carga sostenida realista en vez de maximizar throughput
+        durante 30 min) — la latencia y la tasa de error, las métricas que sí importan
+        en un soak test, pasan cómodo. 100% de checks exitosos (169,993 / 169,993).
+      </div>
+      <div class="mem-tile">
+        <div class="mem-label">Heap JVM durante los 30 min</div>
+        <div class="mem-track"><div class="mem-fill"></div></div>
+        <div class="mem-scale"><span>0 MB</span><span>~150 → 214 MB</span><span>1,986 MB (máx.)</span></div>
+        <div class="mem-detail">
+          Tasa de GC estabilizada en <strong>0.400/s</strong> durante los últimos ~20 min
+          — una fuga real mostraría una tasa creciente, no plana.
+          <strong>Sin evidencia de fuga de memoria.</strong>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    Datos de las 3 corridas reales verificadas contra el stack completo (TEST-006,
+    ver <code>docs/performance.md</code>). k6 corrido vía la imagen Docker oficial
+    (<code>grafana/k6</code>), sin instalación local. Este resumen no se actualiza en
+    vivo — refleja los resultados documentados de la última verificación.
+  </footer>
+
+</div>
+</body>
+</html>
