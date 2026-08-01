@@ -102,12 +102,13 @@ completo con comentarios. Puntos clave:
 - **`KEYCLOAK_HOSTNAME`**: a diferencia de dev (que fija `KC_HOSTNAME=localhost`),
   en staging es una variable — debe apuntar al host público real donde
   corre staging (o a `localhost` para verificación local).
-- **`VITE_*`**: no son leídas en runtime por `docker-compose.staging.yml`
-  (Vite las hornea en el bundle en build-time, ver `frontend/Dockerfile`).
-  Se documentan en `.env.staging.example` para que el build de
-  `FRONTEND_IMAGE` (`docker build --build-arg VITE_...`, ver
-  `BUILD_LOCAL=true` en `start-staging.sh`) use los mismos valores que el
-  resto del entorno.
+- **`VITE_*`**: se inyectan en **runtime**, no en build-time — `docker-compose.staging.yml`
+  las pasa como `environment:` del contenedor `frontend`,
+  `frontend/docker-entrypoint.sh` las lee al arrancar y genera
+  `env-config.js` con esos valores antes de que nginx empiece a servir (ver
+  `frontend/src/config/env.js`). La imagen `FRONTEND_IMAGE` es la misma para
+  cualquier dominio — apuntar a un dominio distinto es cambiar estos 4
+  valores en `.env.staging`, sin reconstruir la imagen.
 - **`SPRING_PROFILES_ACTIVE=staging`**: fijo en `docker-compose.staging.yml`
   (no configurable). **Decisión explícita**: no se creó un
   `backend/src/main/resources/application-staging.yml` — `application.yml`
@@ -123,13 +124,8 @@ completo con comentarios. Puntos clave:
 # Backend
 docker build -t "${BACKEND_IMAGE}" ./backend
 
-# Frontend (las VITE_* se hornean en este paso, no en runtime)
-docker build \
-  --build-arg VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
-  --build-arg VITE_KEYCLOAK_URL="${VITE_KEYCLOAK_URL}" \
-  --build-arg VITE_KEYCLOAK_REALM="${VITE_KEYCLOAK_REALM}" \
-  --build-arg VITE_KEYCLOAK_CLIENT_ID="${VITE_KEYCLOAK_CLIENT_ID}" \
-  -t "${FRONTEND_IMAGE}" ./frontend
+# Frontend (domain-agnostic — las VITE_* se inyectan en runtime, no acá)
+docker build -t "${FRONTEND_IMAGE}" ./frontend
 ```
 
 `BUILD_LOCAL=true ./scripts/start-staging.sh` hace exactamente esto antes de

@@ -15,25 +15,12 @@ RUN npm ci || npm ci
 
 COPY . .
 
-# VITE_API_BASE_URL y las variables VITE_KEYCLOAK_* se hornean en el bundle en
-# build-time (Vite lee import.meta.env.VITE_* solo durante "vite build", nunca en
-# runtime) — .dockerignore excluye ".env" del build context (correcto: no se debe
-# commitear ni copiar ese archivo), así que sin estos ARG/ENV la imagen se construía
-# SIN ninguna variable VITE_* seteada y keycloak-js fallaba en runtime con
-# "clientId missing" (pantalla en blanco) en cualquier despliegue real de esta
-# imagen (TEST-005, encontrado al correr un login real de Playwright contra el
-# contenedor — nunca antes verificado, CICD-004 solo probaba curl a "/"/"/healthz").
-# Los defaults matchean docker-compose.dev.yml/.env.example; para staging/producción
-# (INFRA-004) se sobreescriben con --build-arg cuando esos valores difieran.
-ARG VITE_API_BASE_URL=http://localhost:8081/api
-ARG VITE_KEYCLOAK_URL=http://localhost:8080
-ARG VITE_KEYCLOAK_REALM=inventario
-ARG VITE_KEYCLOAK_CLIENT_ID=inventario-frontend
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-ENV VITE_KEYCLOAK_URL=$VITE_KEYCLOAK_URL
-ENV VITE_KEYCLOAK_REALM=$VITE_KEYCLOAK_REALM
-ENV VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID
-
+# Las variables VITE_* ya NO se hornean en build-time (a diferencia de versiones
+# anteriores de este Dockerfile) — se inyectan en RUNTIME vía env-config.js, generado
+# por docker-entrypoint.sh al arrancar el contenedor a partir de las variables de
+# entorno reales del compose. Así la misma imagen sirve para dev/staging/production o
+# un dominio real futuro con solo cambiar "environment:" en el compose, sin
+# reconstruir la imagen — ver docker-entrypoint.sh y src/config/env.js.
 RUN npm run build
 
 # ===== Etapa 2: Runtime (Nginx sirviendo el build estatico) =====
@@ -45,6 +32,14 @@ RUN npm run build
 FROM nginx:alpine-slim
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Genera env-config.js real a partir de las variables de entorno del contenedor antes
+# de arrancar nginx — ver el propio script para el detalle completo.
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+# Windows/NTFS no trackea el bit ejecutable de forma confiable (mismo problema ya
+# documentado con .husky/commit-msg, INFRA-006) — se corrige explícitamente acá en
+# vez de depender de que el archivo lo traiga del checkout.
+RUN chmod +x /docker-entrypoint.sh
 
 # La imagen base ya trae un usuario "nginx" (no-root); reutilizarlo evita
 # tener que crear uno nuevo y solo requiere ajustar permisos de escritura.
@@ -58,4 +53,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/healthz || exit 1
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]

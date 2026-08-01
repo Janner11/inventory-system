@@ -280,15 +280,12 @@ jobs:
         run: docker build -t "${{ steps.tags.outputs.backend-image }}" backend/
 
       - name: Build frontend image
-        # Build-args apuntando al stack de staging (job siguiente) — VITE_* se hornean en
-        # el bundle en build-time (frontend/Dockerfile, TEST-005), no en runtime.
-        run: |
-          docker build \
-            --build-arg VITE_API_BASE_URL=http://localhost:8082/api \
-            --build-arg VITE_KEYCLOAK_URL=http://localhost:8180 \
-            --build-arg VITE_KEYCLOAK_REALM=inventario \
-            --build-arg VITE_KEYCLOAK_CLIENT_ID=inventario-frontend \
-            -t "${{ steps.tags.outputs.frontend-image }}" frontend/
+        # La imagen es domain-agnostic — las variables VITE_* se inyectan en runtime
+        # por docker-entrypoint.sh (frontend/Dockerfile), no en build-time, así que
+        # este build ya no necesita --build-arg apuntando a staging. El job
+        # "staging-e2e-security" las pasa como "environment:" al desplegar
+        # docker-compose.staging.yml (.env.staging).
+        run: docker build -t "${{ steps.tags.outputs.frontend-image }}" frontend/
 
       - name: Trivy — backend image (0 CRITICAL)
         # CICD-004: gate real, no solo verificacion manual. Un CRITICAL conocido

@@ -80,7 +80,10 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 },
       "fieldConfig": {
-        "defaults": { "unit": "currencyUSD" },
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
         "overrides": []
       },
       "options": {

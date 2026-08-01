@@ -7,6 +7,10 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Config runtime (env-config.js) — debe cargar antes que el bundle principal,
+         que la lee en src/config/env.js. Un <script> clásico como este siempre se
+         ejecuta antes que los <script type="module">, sin necesitar "defer". -->
+    <script src="/env-config.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
