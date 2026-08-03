@@ -69,7 +69,16 @@ services:
     image: quay.io/keycloak/keycloak:24.0
     container_name: inventario-production-keycloak
     restart: unless-stopped
-    command: start-dev --health-enabled=true --import-realm
+    # A diferencia de dev/staging (start-dev, modo desarrollo — Keycloak advierte
+    # explicitamente "DO NOT use this configuration in production"), este es el unico
+    # de los 3 ambientes que corre en modo de produccion real (`start`). `start` exige
+    # por defecto TLS configurado; como este proyecto academico no tiene un certificado
+    # real (ver "Diferencias esperadas frente a staging" en docs/deployment.md, columna
+    # "Producción real (guía)"), se habilita KC_HTTP_ENABLED=true explicitamente para
+    # permitir HTTP-only en vez de fallar el arranque - la terminacion TLS seguiria
+    # siendo responsabilidad de un reverse proxy delante de este servicio en un
+    # despliegue real, igual que para backend/frontend.
+    command: start --health-enabled=true --import-realm
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
@@ -78,6 +87,7 @@ services:
       KC_DB_USERNAME: ${POSTGRES_USER}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
       # Mismo mecanismo que staging (KC_HOSTNAME configurable, no fijo a "localhost"
       # como en dev) - ver KEYCLOAK_HOSTNAME en .env.production.example.
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
